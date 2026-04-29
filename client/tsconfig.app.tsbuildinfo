@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/sectioncard.tsx","./src/hooks/useofflinesync.ts","./src/lib/api.ts","./src/pages/admin/adminpage.tsx","./src/pages/checkin/checkinpage.tsx","./src/pages/student/studentpage.tsx"],"version":"5.9.3"}

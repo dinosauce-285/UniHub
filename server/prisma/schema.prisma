@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  ORGANIZER
+  CHECKIN_STAFF
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  FREE
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  studentId     String?        @unique
+  email         String         @unique
+  name          String
+  role          Role           @default(STUDENT)
+  registrations Registration[]
+  createdAt     DateTime       @default(now())
+}
+
+model Workshop {
+  id            String         @id
+  title         String
+  description   String
+  speaker       String
+  room          String
+  roomMapUrl    String?
+  startTime     DateTime
+  endTime       DateTime
+  totalSlots    Int
+  isPaid        Boolean        @default(false)
+  price         Int            @default(0)
+  aiSummary     String?
+  registrations Registration[]
+  createdAt     DateTime       @default(now())
+}
+
+model Registration {
+  id             String             @id @default(cuid())
+  userId         String
+  workshopId     String
+  status         RegistrationStatus @default(PENDING)
+  paymentStatus  PaymentStatus      @default(FREE)
+  qrCode         String?
+  idempotencyKey String?            @unique
+  createdAt      DateTime           @default(now())
+  user           User               @relation(fields: [userId], references: [id])
+  workshop       Workshop           @relation(fields: [workshopId], references: [id])
+  checkinLog     CheckinLog?
+
+  @@unique([userId, workshopId])
+}
+
+model CheckinLog {
+  id             String       @id @default(cuid())
+  registrationId String       @unique
+  checkedInAt    DateTime
+  syncedAt       DateTime?
+  registration   Registration @relation(fields: [registrationId], references: [id])
+}
+
+model StudentSyncLog {
+  id           String   @id @default(cuid())
+  filename     String
+  totalRows    Int
+  imported     Int
+  errors       Int
+  errorDetails Json?
+  runAt        DateTime @default(now())
+}
+
