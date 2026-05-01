@@ -1,6 +1,6 @@
-# UniHub Workshop — Technical Design
+# UniHub Workshop - Technical Design
 
-## Kiến trúc tổng thể
+## Overall Architecture
 
 UniHub Workshop sử dụng kiến trúc **Monolith module hóa** (Modular Monolith) kết hợp với một số thành phần bổ trợ độc lập.
 
@@ -28,17 +28,153 @@ Hệ thống có quy mô vừa, team nhỏ (2 người), thời gian hạn chế
 
 ## C4 Diagram
 
-### Level 1 — System Context
+### Level 1 - System Context
+```mermaid
+flowchart LR
+  student[Student]
+  organizer[Organizer]
+  staff[Check-in Staff]
+  legacy[Legacy Student CSV Export]
+  ai[External AI API]
+  gateway[Mock Payment Gateway]
+  mailhog[MailHog SMTP/Web UI]
 
-<!-- Diagram để trống -->
+  system[UniHub Workshop Platform]
 
-### Level 2 — Container
+  student -->|Browse workshops, register, pay, receive QR| system
+  organizer -->|Manage workshops, upload CSV/PDF, monitor operations| system
+  staff -->|Scan QR and sync offline check-ins| system
+  legacy -->|Nightly CSV input| system
+  system -->|Payment authorization with circuit breaker| gateway
+  system -->|Email delivery in development| mailhog
+  system -->|PDF text summary requests| ai
+```
 
-<!-- Diagram để trống -->
+
+UniHub is the single platform for workshop discovery, registration, payment fallback, QR check-in, and operational workflows. Users access it through `client/`; integrations and persistence are coordinated by `server/`.
+
+### Level 2 - Container
+
+```mermaid
+flowchart TB
+  subgraph Browser["User Browser / Mobile Device"]
+    spa["client/ React + Vite SPA"]
+    pwa["Check-in PWA surface"]
+    indexeddb[(IndexedDB pending_checkins)]
+    pwa <--> indexeddb
+  end
+
+  subgraph Api["server/ NestJS API"]
+    auth["AuthModule<br/>JWT + RBAC"]
+    workshop["WorkshopModule<br/>CRUD + slot read model"]
+    registration["RegistrationModule<br/>slot claim + QR"]
+    payment["PaymentModule<br/>opossum circuit breaker"]
+    checkin["CheckinModule<br/>validate + sync"]
+    notification["NotificationModule<br/>enqueue jobs"]
+    sync["StudentSyncModule<br/>CSV import"]
+    summary["AiSummaryModule<br/>PDF summary enqueue"]
+  end
+
+  subgraph Worker["server/ Worker Process"]
+    notificationWorker["Notification worker"]
+    csvWorker["Student sync worker"]
+    aiWorker["AI summary worker"]
+  end
+
+  postgres[(PostgreSQL<br/>canonical data)]
+  redis[(Redis<br/>slots, rate limits,<br/>idempotency, Bull queues,<br/>breaker state)]
+  mailhog[MailHog]
+  gateway[Mock Payment Gateway]
+  ai[External AI API]
+  csv[CSV files]
+
+  spa -->|REST JSON + JWT| auth
+  spa -->|REST JSON + JWT| workshop
+  spa -->|REST JSON + JWT + Idempotency-Key| registration
+  spa -->|paid registration| payment
+  pwa -->|online validate / sync batch| checkin
+
+  auth --> postgres
+  workshop --> postgres
+  workshop --> redis
+  registration --> redis
+  registration --> postgres
+  registration --> notification
+  payment --> redis
+  payment --> gateway
+  payment --> postgres
+  checkin --> postgres
+  checkin --> redis
+  notification --> redis
+  sync --> redis
+  summary --> redis
+
+  redis --> notificationWorker
+  redis --> csvWorker
+  redis --> aiWorker
+  notificationWorker --> mailhog
+  csvWorker --> csv
+  csvWorker --> postgres
+  aiWorker --> ai
+  aiWorker --> postgres
+```
+
+
+`server/` remains the HTTP modular monolith. Background work runs in worker processes that use Redis-backed Bull queues. PostgreSQL is the source of truth; Redis is used for volatile coordination and read-side counters.
 
 ## High-Level Architecture Diagram
 
-<!-- Diagram để trống -->
+```mermaid
+flowchart TD
+  student[Student in client/]
+  staff[Check-in Staff in client/ PWA]
+  api[server/ NestJS API]
+  idemp[(Redis idempotency:key<br/>TTL 24h)]
+  slots[(Redis workshop:id:slots)]
+  breaker[(Redis / memory<br/>payment breaker state)]
+  db[(PostgreSQL)]
+  queue[(Redis Bull queues)]
+  worker[server/ Worker]
+  mailhog[MailHog]
+  gateway[Mock Payment Gateway]
+  pending[(IndexedDB pending_checkins)]
+
+  student -->|POST /registrations<br/>Idempotency-Key| api
+  api -->|GET idempotency:key| idemp
+  idemp -->|cached result| api
+  api -->|DECR workshop:id:slots| slots
+  slots -->|remaining >= 0| api
+  slots -->|remaining < 0 then INCR| api
+  api -->|create Registration + QR| db
+  api -->|SET idempotency result| idemp
+  api -->|enqueue notification job| queue
+  queue --> worker
+  worker -->|send confirmation email| mailhog
+
+  student -->|paid workshop payment request<br/>Idempotency-Key| api
+  api -->|check/update breaker state| breaker
+  breaker -->|OPEN: fast fallback canPay=false| api
+  breaker -->|CLOSED/HALF_OPEN| gateway
+  gateway -->|success/failure| api
+  api -->|update paymentStatus| db
+
+  staff -->|scan QR while online| api
+  api -->|POST /checkin/validate<br/>insert CheckinLog| db
+
+  staff -->|scan QR while offline| pending
+  pending -->|navigator online event| staff
+  staff -->|POST /checkin/sync batch| api
+  api -->|idempotent upsert check-ins| db
+  api -->|synced result| staff
+  staff -->|clear synced items| pending
+```
+
+Registration is the strongest consistency path: the API checks the idempotency cache before touching slot state, uses Redis `DECR` as the atomic slot claim, writes the confirmed registration and QR to PostgreSQL, then stores the response for safe retries. If `DECR` returns a negative value, the API compensates with `INCR` and returns `409`.
+
+Payment is isolated from free registration. Paid flows use the same idempotency concept, but calls to the mock gateway pass through an `opossum` circuit breaker; when the breaker is open, the API returns a graceful fallback instead of retrying the gateway.
+
+Check-in supports both immediate and delayed writes. Online scans call `POST /checkin/validate`; offline scans are held in IndexedDB and later uploaded to `POST /checkin/sync`, which must be idempotent so repeated batches do not create duplicate `CheckinLog` rows.
+
 
 ## Thiết kế cơ sở dữ liệu
 
@@ -48,8 +184,8 @@ Sử dụng **PostgreSQL** (SQL) làm database chính duy nhất.
 
 **Lý do:**
 - Dữ liệu có cấu trúc quan hệ rõ ràng: User — Registration — Workshop — Room.
-- Cần transaction ACID cho luồng đăng ký (atomic slot deduction + tạo registration).
-- Pessimistic Locking (`SELECT FOR UPDATE`) là native feature của PostgreSQL, đơn giản hơn nhiều so với implement ở tầng application.
+- Cần ràng buộc dữ liệu và transaction cho các bản ghi nghiệp vụ như User, Workshop, Registration, CheckinLog.
+- Luồng claim slot sử dụng Redis `DECR` atomic để xử lý tranh chấp số chỗ; PostgreSQL giữ vai trò lưu dữ liệu canonical và ràng buộc unique để chống đăng ký trùng.
 - Team quen với SQL, không có usecase đặc thù cần NoSQL (không có document unstructured, không cần graph query).
 
 Redis được dùng như **cache và coordination layer**, không phải database chính.
@@ -130,7 +266,8 @@ Notification {
 }
 ```
 
-## Thiết kế kiểm soát truy cập
+
+## Access Control Design
 
 ### Mô hình phân quyền: RBAC (Role-Based Access Control)
 
@@ -174,9 +311,10 @@ Notification {
 - Trang admin React: redirect về `/login` nếu role không phải `ORGANIZER`.
 - PWA check-in: ẩn toàn bộ UI nếu role không phải `CHECKIN_STAFF`.
 
-## Thiết kế các cơ chế bảo vệ hệ thống
+## System Protection Design
 
-### Kiểm soát tải đột biến
+### Traffic Spike Control
+
 
 **Giải pháp: Token Bucket** implemented bằng Redis + NestJS Throttler.
 
@@ -195,7 +333,8 @@ Token Bucket cho phép burst ngắn hạn (sinh viên click nhanh 2–3 lần v�
 **Chống tranh chấp slot (race condition):**
 Dùng `SELECT FOR UPDATE` trên bảng `Workshop` khi deduct slot, đảm bảo atomic trong cùng một DB transaction.
 
-### Xử lý cổng thanh toán không ổn định
+### Payment Gateway Instability
+
 
 **Giải pháp: Circuit Breaker** với 3 trạng thái, state lưu trong Redis.
 
@@ -214,7 +353,8 @@ Dùng `SELECT FOR UPDATE` trên bảng `Workshop` khi deduct slot, đảm bảo 
 - Frontend: ẩn nút "Đăng ký" trên workshop có phí, hiển thị banner "Hệ thống thanh toán đang gián đoạn, vui lòng thử lại sau."
 - Trang danh sách workshop, trang chi tiết: **load bình thường**.
 
-### Chống trừ tiền hai lần
+### Double Charge / Duplicate Registration Prevention
+
 
 **Giải pháp: Idempotency Key**
 
@@ -231,7 +371,7 @@ Dùng `SELECT FOR UPDATE` trên bảng `Workshop` khi deduct slot, đảm bảo 
 
 **TTL:** 24 giờ — đủ dài để cover mọi retry trong một phiên đăng ký.
 
-## Các quyết định kỹ thuật quan trọng (ADR)
+## Architecture Decision Records
 
 ### ADR-1: JWT thuần thay vì Session
 

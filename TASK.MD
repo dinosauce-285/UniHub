@@ -79,7 +79,7 @@ unihub-workshop/
 ├── docker-compose.yml          ← Postgres + Redis + MailHog
 ├── .env.example
 │
-├── backend/                    ← NestJS
+├── server/                     ← NestJS
 │   ├── src/
 │   │   ├── modules/
 │   │   │   ├── auth/           ← JWT + RBAC Guards
@@ -99,7 +99,7 @@ unihub-workshop/
 │   │       └── schema.prisma
 │   └── package.json
 │
-├── frontend/                   ← React + Vite + TailwindCSS
+├── client/                     ← React + Vite + TailwindCSS
 │   ├── src/
 │   │   ├── pages/
 │   │   │   ├── student/        ← Xem workshop, đăng ký
@@ -112,7 +112,7 @@ unihub-workshop/
 │   │       └── api.ts
 │   └── package.json
 │
-├── blueprint/                  ← Thạnh làm OpenSpec
+├── blueprint/                  ← source of truth for product and technical specs
 │   ├── proposal.md
 │   ├── design.md
 │   └── specs/
@@ -452,7 +452,7 @@ volumes:
 
 ---
 
-## OpenSpec Blueprint structure (Thạnh viết)
+## Blueprint documentation structure (Thạnh viết)
 
 ```
 blueprint/
