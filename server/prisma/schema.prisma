@@ -1,16 +1,23 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum Role {
   STUDENT
   ORGANIZER
   CHECKIN_STAFF
+}
+
+enum WorkshopStatus {
+  DRAFT
+  OPEN
+  CANCELLED
+  COMPLETED
 }
 
 enum RegistrationStatus {
@@ -34,11 +41,12 @@ model User {
   name          String
   role          Role           @default(STUDENT)
   registrations Registration[]
+  checkinLogs   CheckinLog[]
   createdAt     DateTime       @default(now())
 }
 
 model Workshop {
-  id            String         @id
+  id            String         @id @default(cuid())
   title         String
   description   String
   speaker       String
@@ -47,6 +55,8 @@ model Workshop {
   startTime     DateTime
   endTime       DateTime
   totalSlots    Int
+  slotLeft      Int
+  status        WorkshopStatus @default(DRAFT)
   isPaid        Boolean        @default(false)
   price         Int            @default(0)
   aiSummary     String?
@@ -60,8 +70,9 @@ model Registration {
   workshopId     String
   status         RegistrationStatus @default(PENDING)
   paymentStatus  PaymentStatus      @default(FREE)
-  qrCode         String?
+  qrCode         String?            @unique
   idempotencyKey String?            @unique
+  checkedInAt    DateTime?
   createdAt      DateTime           @default(now())
   user           User               @relation(fields: [userId], references: [id])
   workshop       Workshop           @relation(fields: [workshopId], references: [id])
@@ -73,9 +84,12 @@ model Registration {
 model CheckinLog {
   id             String       @id @default(cuid())
   registrationId String       @unique
+  staffId        String
+  deviceId       String?
   checkedInAt    DateTime
   syncedAt       DateTime?
   registration   Registration @relation(fields: [registrationId], references: [id])
+  staff          User         @relation(fields: [staffId], references: [id])
 }
 
 model StudentSyncLog {
@@ -87,4 +101,3 @@ model StudentSyncLog {
   errorDetails Json?
   runAt        DateTime @default(now())
 }
-
