@@ -20,8 +20,8 @@ Hệ thống có quy mô vừa, team nhỏ (2 người), thời gian hạn chế
 **Giao tiếp giữa các thành phần:**
 - Web/PWA ↔ Backend API: REST over HTTP, JWT trong Authorization header.
 - Backend API ↔ PostgreSQL: Prisma ORM.
-- Backend API ↔ Redis: ioredis (cache, lock, rate limit, CB state).
-- Backend API ↔ Bull Queue: job producer/consumer trong cùng process.
+- Backend API ↔ Redis: ioredis (cache, coordination, rate limit, CB state).
+- Backend API ↔ Bull Queue: Backend API đóng vai trò job producer; các worker process độc lập đóng vai trò consumer.
 - Bull Queue → Email Service: SMTP (Nodemailer).
 - Bull Queue → AI Model: HTTP call đến Anthropic API.
 - Cronjob → CSV file: đọc file từ thư mục được mount, import vào PostgreSQL.
@@ -51,7 +51,7 @@ flowchart LR
 ```
 
 
-UniHub is the single platform for workshop discovery, registration, payment fallback, QR check-in, and operational workflows. Users access it through `client/`; integrations and persistence are coordinated by `server/`.
+UniHub là nền tảng thống nhất cho việc xem workshop, đăng ký, thanh toán dự phòng, QR check-in và vận hành sự kiện. Người dùng truy cập qua `client/`; tích hợp và lưu trữ được điều phối bởi `server/`.
 
 ### Level 2 - Container
 
@@ -120,7 +120,7 @@ flowchart TB
 ```
 
 
-`server/` remains the HTTP modular monolith. Background work runs in worker processes that use Redis-backed Bull queues. PostgreSQL is the source of truth; Redis is used for volatile coordination and read-side counters.
+`server/` vẫn là HTTP modular monolith. Các tác vụ nền chạy trong worker process riêng và dùng Bull Queue trên Redis. PostgreSQL là nơi lưu dữ liệu canonical; Redis chỉ dùng cho phối hợp tạm thời và counter phía đọc.
 
 ## High-Level Architecture Diagram
 
@@ -169,11 +169,11 @@ flowchart TD
   staff -->|clear synced items| pending
 ```
 
-Registration is the strongest consistency path: the API checks the idempotency cache before touching slot state, uses Redis `DECR` as the atomic slot claim, writes the confirmed registration and QR to PostgreSQL, then stores the response for safe retries. If `DECR` returns a negative value, the API compensates with `INCR` and returns `409`.
+Registration là luồng cần consistency cao nhất: API kiểm tra idempotency cache trước khi đụng tới trạng thái slot, dùng Redis `DECR` để claim slot atomic, ghi registration và QR đã xác nhận xuống PostgreSQL, rồi lưu response để retry an toàn. Nếu `DECR` trả về số âm, API bù lại bằng `INCR` và trả `409`.
 
-Payment is isolated from free registration. Paid flows use the same idempotency concept, but calls to the mock gateway pass through an `opossum` circuit breaker; when the breaker is open, the API returns a graceful fallback instead of retrying the gateway.
+Payment được tách khỏi luồng đăng ký miễn phí. Luồng có phí dùng cùng cơ chế idempotency, nhưng lời gọi đến mock gateway đi qua circuit breaker `opossum`; khi breaker open, API trả fallback thay vì tiếp tục gọi gateway.
 
-Check-in supports both immediate and delayed writes. Online scans call `POST /checkin/validate`; offline scans are held in IndexedDB and later uploaded to `POST /checkin/sync`, which must be idempotent so repeated batches do not create duplicate `CheckinLog` rows.
+Check-in hỗ trợ cả ghi nhận tức thì và ghi nhận trễ. Quét online gọi `POST /api/checkin/validate`; quét offline được lưu trong IndexedDB và đẩy lên `POST /api/checkin/sync` khi có mạng. Endpoint sync phải idempotent để batch gửi lặp không tạo trùng `CheckinLog`.
 
 
 ## Thiết kế cơ sở dữ liệu
@@ -195,74 +195,51 @@ Redis được dùng như **cache và coordination layer**, không phải databa
 ```sql
 -- Người dùng hệ thống
 User {
-  id          UUID PRIMARY KEY
-  studentId   VARCHAR UNIQUE      -- mã sinh viên, sync từ CSV
-  email       VARCHAR UNIQUE
-  name        VARCHAR
-  role        ENUM(STUDENT, ORGANIZER, CHECKIN_STAFF)
-  passwordHash VARCHAR
-  createdAt   TIMESTAMP
+  id            UUID PRIMARY KEY
+  studentId     VARCHAR UNIQUE      -- mã sinh viên, sync từ CSV
+  email         VARCHAR UNIQUE
+  name          VARCHAR
+  role          ENUM(STUDENT, ORGANIZER, CHECKIN_STAFF)
+  createdAt     TIMESTAMP
 }
 
 -- Workshop
 Workshop {
-  id          UUID PRIMARY KEY
-  title       VARCHAR
-  description TEXT
-  speakerName VARCHAR
-  roomId      UUID REFERENCES Room(id)
-  startTime   TIMESTAMP
-  endTime     TIMESTAMP
-  capacity    INT
-  slotLeft    INT                 -- cache ở Redis, DB là source of truth
-  price       DECIMAL(10,2)       -- 0 = miễn phí
-  status      ENUM(DRAFT, OPEN, CANCELLED, COMPLETED)
-  aiSummary   TEXT                -- kết quả AI Summary
-  createdAt   TIMESTAMP
-}
-
--- Phòng tổ chức
-Room {
-  id          UUID PRIMARY KEY
-  name        VARCHAR
-  building    VARCHAR
-  mapImageUrl VARCHAR             -- sơ đồ phòng
-  capacity    INT
+  id            UUID PRIMARY KEY
+  title         VARCHAR
+  description   TEXT
+  speaker       VARCHAR
+  room          VARCHAR
+  roomMapUrl    VARCHAR
+  startTime     TIMESTAMP
+  endTime       TIMESTAMP
+  totalSlots    INT                 -- tổng số chỗ canonical; slot còn lại được phối hợp bằng Redis
+  status        ENUM(DRAFT, OPEN, CANCELLED, COMPLETED)
+  isPaid        BOOLEAN
+  price         INT                 -- 0 = miễn phí
+  aiSummary     TEXT                -- kết quả AI Summary
+  createdAt     TIMESTAMP
 }
 
 -- Đăng ký tham dự
 Registration {
-  id              UUID PRIMARY KEY
-  userId          UUID REFERENCES User(id)
-  workshopId      UUID REFERENCES Workshop(id)
-  status          ENUM(PENDING_PAYMENT, CONFIRMED, CANCELLED, CHECKED_IN)
-  qrCode          VARCHAR UNIQUE  -- mã QR để check-in
-  idempotencyKey  VARCHAR UNIQUE  -- chống thanh toán 2 lần
-  paidAt          TIMESTAMP
-  checkedInAt     TIMESTAMP
-  createdAt       TIMESTAMP
+  id             UUID PRIMARY KEY
+  userId         UUID REFERENCES User(id)
+  workshopId     UUID REFERENCES Workshop(id)
+  status         ENUM(PENDING, CONFIRMED, CANCELLED)
+  paymentStatus  ENUM(FREE, PENDING, PAID, FAILED, REFUNDED)
+  qrCode         VARCHAR UNIQUE  -- mã QR để check-in
+  idempotencyKey VARCHAR UNIQUE  -- chống request/thanh toán lặp
+  createdAt      TIMESTAMP
   UNIQUE(userId, workshopId)
 }
 
 -- Lịch sử check-in (hỗ trợ offline sync)
-CheckInRecord {
-  id            UUID PRIMARY KEY
-  registrationId UUID REFERENCES Registration(id)
-  staffId       UUID REFERENCES User(id)
-  checkedInAt   TIMESTAMP
-  syncedAt      TIMESTAMP         -- null nếu chưa sync lên server
-  deviceId      VARCHAR           -- identify thiết bị offline
-}
-
--- Thông báo
-Notification {
-  id        UUID PRIMARY KEY
-  userId    UUID REFERENCES User(id)
-  type      ENUM(REGISTRATION_CONFIRMED, WORKSHOP_CANCELLED, WORKSHOP_UPDATED)
-  channel   ENUM(APP, EMAIL)
-  payload   JSONB
-  sentAt    TIMESTAMP
-  status    ENUM(PENDING, SENT, FAILED)
+CheckinLog {
+  id             UUID PRIMARY KEY
+  registrationId UUID UNIQUE REFERENCES Registration(id)
+  checkedInAt    TIMESTAMP
+  syncedAt       TIMESTAMP         -- null nếu chưa sync lên server
 }
 ```
 
@@ -307,7 +284,7 @@ Notification {
 - `/api/workshops` (GET): public, không cần token.
 - `/api/registrations` (POST): yêu cầu `STUDENT`.
 - `/api/admin/workshops` (POST/PATCH/DELETE): yêu cầu `ORGANIZER`.
-- `/api/checkin/scan` (POST): yêu cầu `CHECKIN_STAFF`.
+- `/api/checkin/validate` (POST): yêu cầu `CHECKIN_STAFF`.
 - Trang admin React: redirect về `/login` nếu role không phải `ORGANIZER`.
 - PWA check-in: ẩn toàn bộ UI nếu role không phải `CHECKIN_STAFF`.
 
@@ -331,7 +308,7 @@ Token Bucket cho phép burst ngắn hạn (sinh viên click nhanh 2–3 lần v�
 - Frontend hiển thị thông báo "Bạn đang thao tác quá nhanh, vui lòng thử lại sau X giây."
 
 **Chống tranh chấp slot (race condition):**
-Dùng `SELECT FOR UPDATE` trên bảng `Workshop` khi deduct slot, đảm bảo atomic trong cùng một DB transaction.
+Dùng Redis `DECR` trên key slot của workshop để claim chỗ atomic. Nếu kết quả âm, API gọi `INCR` để hoàn slot và trả `409`. PostgreSQL lưu bản ghi canonical và ràng buộc unique, không dùng DB row locking làm cơ chế claim slot chính.
 
 ### Payment Gateway Instability
 
@@ -387,7 +364,7 @@ Dùng `SELECT FOR UPDATE` trên bảng `Workshop` khi deduct slot, đảm bảo 
 
 **Chọn:** PostgreSQL duy nhất cho toàn bộ dữ liệu nghiệp vụ.
 
-**Lý do:** Dữ liệu có quan hệ rõ ràng, cần JOIN và transaction ACID. `SELECT FOR UPDATE` là tính năng native giải quyết trực tiếp bài toán tranh chấp slot. Team quen SQL.
+**Lý do:** Dữ liệu có quan hệ rõ ràng, cần JOIN, ràng buộc unique và transaction ACID cho bản ghi canonical. Bài toán tranh chấp slot được xử lý bằng Redis `DECR`; PostgreSQL đảm bảo dữ liệu đăng ký không trùng và có thể audit. Team quen SQL.
 
 **Đánh đổi:** Khó scale write theo chiều ngang hơn MongoDB. Không ảnh hưởng ở quy mô đồ án.
 
