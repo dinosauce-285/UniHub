@@ -6,7 +6,7 @@ context: |
   Infrastructure: Docker Compose (Postgres 16, Redis 7, MailHog)
   Workers: Bull Queue for async jobs (notification, CSV sync, AI summary)
   Auth: JWT + Passport.js, RBAC with 3 roles: STUDENT, ORGANIZER, CHECKIN_STAFF
-  Repo layout: /client (React), /server (NestJS), /blueprint (OpenSpec docs), /data (seed + CSV)
+  Repo layout: /client (React), /server (NestJS), /blueprint (product and technical specs), /data (seed + CSV)
   Key patterns:
     - Redis DECR atomic for slot claiming (no DB lock)
     - opossum Circuit Breaker for payment gateway
