@@ -1,40 +1,57 @@
 # UniHub Workshop — Project Proposal
 
 ## Vấn đề
-Hiện tại, Trường Đại học tổ chức "Tuần lễ kỹ năng và nghề nghiệp" quy mô lớn (kéo dài 5 ngày, mỗi ngày 8-12 workshop song song) bằng cách sử dụng Google Form và gửi thông báo qua email thủ công. Quy trình này gặp nhiều hạn chế:
-- **Quá tải & Cạnh tranh không công bằng**: Hàng ngàn sinh viên truy cập cùng lúc dẫn đến hệ thống bị sập cục bộ hoặc đăng ký vượt số lượng vé thực tế (oversell).
-- **Thiếu tự động hóa**: Ban tổ chức tốn rất nhiều thời gian tổng hợp danh sách, duyệt thanh toán và gửi email.
-- **Quy trình điểm danh thủ công**: Không có công cụ check-in tại sự kiện chuyên nghiệp, việc dò tên mất thời gian.
-Hậu quả là trải nghiệm của sinh viên bị ảnh hưởng nghiêm trọng, rủi ro quản lý tăng cao và gây áp lực lớn lên đội ngũ vận hành.
+
+Trường Đại học A tổ chức "Tuần lễ kỹ năng và nghề nghiệp" hàng năm với 5 ngày, mỗi ngày có 8–12 workshop diễn ra song song. Hiện tại ban tổ chức quản lý đăng ký bằng Google Form và thông báo qua email thủ công.
+
+Quy trình này gây ra các hậu quả cụ thể:
+
+- **Tranh chấp chỗ ngồi:** Google Form không kiểm soát số lượng — nhiều sinh viên có thể đăng ký vượt quá sức chứa phòng, ban tổ chức phải lọc thủ công sau đó.
+- **Không có xác nhận tức thời:** Sinh viên không biết mình có chỗ hay không cho đến khi nhận email thủ công từ ban tổ chức, đôi khi mất vài ngày.
+- **Check-in thủ công:** Nhân sự phải đối chiếu danh sách in giấy tại cửa phòng, dễ sai sót và mất thời gian.
+- **Không có thống kê:** Ban tổ chức không theo dõi được số lượng đăng ký theo thời gian thực, khó điều phối phòng và diễn giả.
+- **Không mở rộng được:** Khi quy mô tăng lên hàng nghìn sinh viên đăng ký cùng lúc, Google Form và email thủ công hoàn toàn không đáp ứng được.
 
 ## Mục tiêu
-Số hóa toàn bộ quy trình sự kiện từ khâu đăng ký đến điểm danh tại cửa, cụ thể:
-- **Đảm bảo khả năng chịu tải**: Hỗ trợ an toàn 12.000 sinh viên truy cập trong 10 phút đầu (với 60% dồn vào 3 phút đầu).
-- **Tính chính xác 100%**: Cam kết không xảy ra tình trạng "oversell" chỗ ngồi dù có hàng trăm lượt đăng ký đồng thời trong 1 giây.
-- **Tiện lợi tại sự kiện**: Cung cấp ứng dụng PWA điểm danh qua QR code nhanh chóng, hỗ trợ hoạt động mượt mà kể cả khi rớt mạng (Offline Check-in).
+
+- Hỗ trợ **12.000 sinh viên** truy cập trong 10 phút đầu khi mở đăng ký, trong đó 60% dồn vào 3 phút đầu tiên.
+- Đảm bảo **không có hai sinh viên nào cùng nhận được chỗ cuối cùng** của một workshop.
+- Sinh viên nhận **mã QR xác nhận trong vòng vài giây** sau khi đăng ký thành công.
+- Nhân sự check-in **vẫn hoạt động được khi mất mạng**, dữ liệu không bị mất khi kết nối phục hồi.
+- Hệ thống **vẫn cho xem lịch workshop bình thường** dù cổng thanh toán đang gặp sự cố.
+- Dễ dàng **bổ sung kênh thông báo mới** (Telegram, v.v.) mà không cần thay đổi lớn vào code hiện có.
 
 ## Người dùng và nhu cầu
-1. **Sinh viên**: Cần xem lịch sự kiện, đăng ký nhanh, thanh toán an toàn, nhận vé QR và vào cửa dễ dàng. *Điều quan trọng nhất*: Hệ thống không bị treo lúc đăng ký các workshop "hot".
-2. **Ban tổ chức (Organizer)**: Cần tạo/sửa/hủy workshop, theo dõi dashboard số lượng đăng ký theo thời gian thực và quản lý thông tin. *Điều quan trọng nhất*: Số liệu cập nhật chính xác và tiết kiệm công sức.
-3. **Nhân sự check-in (Staff)**: Cần một ứng dụng di động gọn nhẹ để quét mã QR tại cửa phòng. *Điều quan trọng nhất*: Quét mã cực nhanh và vẫn điểm danh được khi khu vực đó mất sóng 4G/Wifi.
+
+| Nhóm | Nhu cầu chính | Điều quan trọng nhất |
+|---|---|---|
+| **Sinh viên** | Xem lịch workshop, đăng ký, nhận QR, check-in khi tham dự | Đăng ký nhanh, biết ngay có chỗ hay không |
+| **Ban tổ chức** | Tạo/sửa/hủy workshop, xem thống kê đăng ký theo thời gian thực | Kiểm soát được toàn bộ sự kiện từ một trang admin |
+| **Nhân sự check-in** | Quét mã QR tại cửa phòng bằng mobile app | App hoạt động được ngay cả khi mạng không ổn định |
 
 ## Phạm vi
-**Trong phạm vi dự án**:
-- Web App (React + Vite) cho Sinh viên và Admin.
-- Ứng dụng PWA (Progressive Web App) dành cho Staff điểm danh.
-- Backend API (NestJS) với CSDL PostgreSQL.
-- Tích hợp Redis để xử lý tải cao, slot counting và rate limiting.
-- Tích hợp Message Queue (Bull) xử lý các tác vụ ngầm: Gửi email xác nhận, AI Summary, đồng bộ CSV sinh viên đêm.
 
-**Không thuộc phạm vi**:
-- Tích hợp cổng thanh toán (Payment Gateway) của đối tác thật (sẽ sử dụng Mock Gateway để mô phỏng tính không ổn định).
-- Kết nối API thời gian thực hai chiều với hệ thống Quản lý Sinh Viên (chỉ đọc file CSV sinh viên export hàng đêm).
-- Triển khai lên cụm Cloud Production thực tế (dự án chạy trên môi trường Docker Compose).
+**Trong phạm vi đồ án:**
+- Toàn bộ luồng đăng ký: xem workshop, đăng ký miễn phí và có phí, nhận mã QR.
+- Hệ thống thông báo qua app và email, thiết kế để dễ mở rộng thêm kênh mới.
+- Trang admin để quản lý workshop và xem thống kê.
+- Mobile PWA cho nhân sự check-in, hỗ trợ offline.
+- AI Summary tự động từ file PDF giới thiệu workshop.
+- Đồng bộ dữ liệu sinh viên từ file CSV export của hệ thống cũ.
+- Các cơ chế bảo vệ: rate limiting, circuit breaker, idempotency key, RBAC.
+
+**Ngoài phạm vi:**
+- Tích hợp cổng thanh toán thật (dùng mock gateway).
+- Hạ tầng production, CI/CD, monitoring thật (chỉ chạy local qua Docker).
+- API hai chiều với hệ thống quản lý sinh viên hiện tại (chỉ đọc CSV một chiều).
+- Ứng dụng mobile native (iOS/Android) — dùng PWA.
 
 ## Rủi ro và ràng buộc
-- **Tranh chấp chỗ ngồi (Race Conditions)**: Một số workshop chỉ có 60 chỗ. Cần áp dụng cơ chế khóa atomic (Redis DECR) để tránh oversell.
-- **Tải trọng đột biến (Traffic Spikes)**: Hệ thống dễ bị sập nếu không có kiểm soát truy cập. Cần cơ chế Token Bucket Rate Limiting.
-- **Cổng thanh toán không ổn định**: Khi đối tác thanh toán lỗi, hệ thống phải đảm bảo các workshop miễn phí và giao diện xem lịch vẫn hoạt động. Cần áp dụng Circuit Breaker và Graceful Degradation.
-- **Chống trừ tiền / đăng ký hai lần**: Sinh viên có thể spam nút click. Cần cơ chế Idempotency Key bảo vệ API.
-- **Check-in Offline**: Điểm danh khi mất mạng cần lưu tại IndexedDB của thiết bị, tiềm ẩn rủi ro xung đột dữ liệu khi có sóng lại.
-- **Tích hợp dữ liệu một chiều**: Quá trình đọc CSV hàng đêm có thể dính file lỗi hoặc dữ liệu rác, cần cơ chế Dead Letter Queue để không làm gãy toàn bộ tiến trình.
+
+| Vấn đề | Mô tả | Giải pháp dự kiến |
+|---|---|---|
+| **Tranh chấp chỗ ngồi** | Hàng trăm sinh viên cùng đăng ký workshop 60 chỗ ngay khi mở | Pessimistic Locking / Distributed Lock (Redis) để đảm bảo atomic |
+| **Tải đột biến** | ~12.000 sinh viên trong 10 phút, 60% trong 3 phút đầu | Rate Limiting (Token Bucket) + hàng đợi để bảo vệ backend API |
+| **Thanh toán không ổn định** | Cổng thanh toán có thể timeout hoặc sập | Circuit Breaker + Graceful Degradation + Idempotency Key |
+| **Check-in offline** | Một số khu vực mất mạng, dữ liệu không được mất | Offline-first PWA với IndexedDB, sync khi có mạng |
+| **Tích hợp một chiều CSV** | Không có API hệ thống cũ, chỉ có file CSV export theo lịch | Batch Sequential (cronjob đêm) + Dead Letter Queue xử lý lỗi |
