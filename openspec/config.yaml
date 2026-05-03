@@ -1,0 +1,59 @@
+schema: spec-driven
+
+context: |
+  Project: UniHub Workshop — university workshop management system
+  Stack: React (Vite) + TailwindCSS (frontend) | NestJS + Prisma + PostgreSQL + Redis (backend)
+  Infrastructure: Docker Compose (Postgres 16, Redis 7, MailHog)
+  Workers: Bull Queue for async jobs (notification, CSV sync, AI summary)
+  Auth: JWT + Passport.js, RBAC with 3 roles: STUDENT, ORGANIZER, CHECKIN_STAFF
+  Repo layout: /client (React), /server (NestJS), /blueprint (product and technical specs), /data (seed + CSV)
+  Client architecture conventions:
+    - Prefer feature-first code under /client/src/features/<feature> for feature-specific UI, hooks, API calls, types, and state
+    - Use /client/src/pages only for route-level page entry files
+    - Use /client/src/components only for shared, reusable UI used by multiple features/routes
+    - Use /client/src/layouts for shared route shells and authenticated workspace layouts
+    - Use /client/src/lib for infrastructure concerns such as API clients and browser integrations
+    - Use /client/src/hooks, /client/src/types, and /client/src/utils only for cross-feature code that is genuinely shared
+    - Keep App.tsx focused on route composition; move page markup, guards, and workspace UI into dedicated files as the app grows
+  Frontend coding conventions:
+    - Reuse an existing component, hook, utility, or layout before creating a new one
+    - When a new component is only used by one feature, colocate it inside that feature instead of promoting it to /components
+    - When a new component becomes shared across at least two features/routes, move it to /components
+    - Keep page components thin; move business logic and API calls into feature modules or hooks
+    - Centralize role handling in auth types/helpers instead of duplicating string literals across files
+    - Use the shared axios instance in /client/src/lib/api.ts for all HTTP requests
+    - Keep request/response types near the owning feature
+    - Extend existing auth/session patterns instead of introducing parallel token storage or duplicate auth state
+    - For protected frontend routes, pair authentication checks with explicit allowed roles
+    - Prefer incremental edits that preserve existing naming, styling, and folder patterns unless there is a clear architecture issue
+  Backend auth conventions:
+    - Every protected endpoint should use JwtAuthGuard and RolesGuard unless the endpoint is intentionally public
+    - RBAC requirements should be explicit via @Roles decorators at controller handlers
+    - Keep JWT payload and frontend AuthUser role values aligned across client and server
+  Key patterns:
+    - Redis DECR atomic for slot claiming (no DB lock)
+    - opossum Circuit Breaker for payment gateway
+    - Idempotency-Key header + Redis TTL 24h for double-charge prevention
+    - IndexedDB (idb) for offline check-in queue, sync on reconnect
+    - Bull cronjob at 2am for CSV student import
+    - pdf-parse → AI API for workshop AI summary (pipe-and-filter)
+  API conventions: RESTful JSON, guards on every protected endpoint, global ValidationPipe
+  Testing: manual + docker-compose fresh run
+
+rules:
+  proposal:
+    - State the problem clearly with measurable impact
+    - Include in-scope and out-of-scope boundaries
+    - Identify key risks
+  specs:
+    - Use Given/When/Then format for all scenarios
+    - Cover both happy path and error/edge cases
+    - Reference the relevant pattern from TASK.MD when applicable
+  design:
+    - Include sequence or flow diagrams for complex interactions
+    - Document Architecture Decision Records (ADR) for major choices
+    - Map modules to NestJS module names
+  tasks:
+    - Group by module/feature area
+    - Use hierarchical numbering (1.1, 1.2)
+    - Keep each task small enough to complete in one coding session
