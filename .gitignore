@@ -8,6 +8,7 @@ server/dist/
 .vite/
 .cache/
 coverage/
+*.tsbuildinfo
 .env
 .env.*
 *.log
