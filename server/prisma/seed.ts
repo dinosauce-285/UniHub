@@ -10,6 +10,7 @@ import {
   Role,
   WorkshopStatus,
 } from '../generated/prisma/client';
+import { hashPassword } from '../src/modules/auth/password';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(
@@ -39,6 +40,7 @@ function readStudents(): StudentRow[] {
 
 async function seedUsers() {
   const students = readStudents();
+  const demoPasswordHash = await hashPassword('Password123!');
   const staff = [
     {
       name: 'Organizer One',
@@ -72,10 +74,12 @@ async function seedUsers() {
       update: {
         name: student.name,
         studentId: student.studentId,
+        passwordHash: demoPasswordHash,
         role: Role.STUDENT,
       },
       create: {
         ...student,
+        passwordHash: demoPasswordHash,
         role: Role.STUDENT,
       },
     });
@@ -84,8 +88,14 @@ async function seedUsers() {
   for (const user of staff) {
     await prisma.user.upsert({
       where: { email: user.email },
-      update: user,
-      create: user,
+      update: {
+        ...user,
+        passwordHash: demoPasswordHash,
+      },
+      create: {
+        ...user,
+        passwordHash: demoPasswordHash,
+      },
     });
   }
 
