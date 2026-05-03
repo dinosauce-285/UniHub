@@ -39,10 +39,24 @@ model User {
   studentId     String?        @unique
   email         String         @unique
   name          String
+  passwordHash  String?
   role          Role           @default(STUDENT)
   registrations Registration[]
   checkinLogs   CheckinLog[]
+  refreshTokens RefreshToken[]
   createdAt     DateTime       @default(now())
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Workshop {

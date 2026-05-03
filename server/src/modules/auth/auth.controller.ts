@@ -1,20 +1,24 @@
 import { Body, Controller, Post } from '@nestjs/common';
-
-class LoginDto {
-  email!: string;
-}
+import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @Controller('auth')
 export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
   @Post('login')
   login(@Body() body: LoginDto) {
-    return {
-      accessToken: 'dev-token',
-      user: {
-        email: body.email,
-        role: 'STUDENT',
-      },
-    };
+    return this.authService.login(body.email, body.password);
+  }
+
+  @Post('refresh')
+  refresh(@Body() body: RefreshTokenDto) {
+    return this.authService.refresh(body.refreshToken);
+  }
+
+  @Post('logout')
+  logout(@Body() body: RefreshTokenDto) {
+    return this.authService.logout(body.refreshToken);
   }
 }
-
