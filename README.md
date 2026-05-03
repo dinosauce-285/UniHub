@@ -30,3 +30,11 @@ Monorepo scaffold for the UniHub workshop platform.
 - API: `http://localhost:3000`
 - Frontend: `http://localhost:5173`
 - MailHog: `http://localhost:8025`
+
+## Demo Credentials
+
+After running `npm run seed` in `server/`, all seeded users use password `Password123!`.
+
+- Student: `student1@unihub.local`
+- Organizer: `organizer1@unihub.local`
+- Check-in staff: `checkin1@unihub.local`
