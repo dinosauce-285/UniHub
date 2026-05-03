@@ -3,16 +3,46 @@
 @tailwind utilities;
 
 :root {
-  color: #0f172a;
-  background: #f8fafc;
+  --color-bg: 248 250 252;
+  --color-surface: 255 255 255;
+  --color-surface-muted: 241 245 249;
+  --color-border: 203 213 225;
+  --color-text: 15 23 42;
+  --color-muted: 71 85 105;
+  --color-primary: 217 119 6;
+  --color-primary-contrast: 255 255 255;
+  --color-success: 5 150 105;
+  --color-warning: 202 138 4;
+  --shadow-card: 0 16px 32px rgb(15 23 42 / 0.08);
+
+  color: rgb(var(--color-text));
+  background: rgb(var(--color-bg));
   font-family: "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
 }
 
 * {
   box-sizing: border-box;
 }
 
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100vh;
+    background: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
+  }
+}
