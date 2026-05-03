@@ -1,24 +1,24 @@
-# Đặc tả: Bắn thông báo (Notification)
+# Specification: Notification
 
-## Mô tả
-Chịu trách nhiệm gửi email xác nhận và thông báo In-app cho sinh viên. Sử dụng Bull Queue để chạy ngầm không đồng bộ nhằm giảm độ trễ của API chính, thiết kế theo Strategy Pattern để dễ dàng gắn thêm kênh chat mới sau này.
+## Description
+Responsible for sending confirmation emails and in-app notifications to students. Uses Bull Queue to run asynchronously in the background, reducing latency on the main API, and follows the Strategy Pattern so new chat channels can be added later.
 
-## Luồng chính
-1. Sinh viên đăng ký workshop thành công.
-2. Backend API vứt một Notification Job vào hàng đợi `notification.queue` của Bull và LẬP TỨC trả kết quả HTTP 201 cho sinh viên.
-3. Background Worker âm thầm móc Job ra xử lý, kích hoạt chiến lược `NotificationStrategy`.
-4. Gọi qua Nodemailer bắn email tới MailHog (dùng SMTP ở port 1025 trên môi trường dev).
+## Main Flow
+1. A student successfully registers for a workshop.
+2. The Backend API places a Notification Job into Bull's `notification.queue` and immediately returns HTTP 201 to the student.
+3. The background worker quietly pulls the job and activates the `NotificationStrategy`.
+4. Nodemailer sends the email to MailHog through SMTP port 1025 in the development environment.
 
-## Kịch bản lỗi
-- **Mail server bị lỗi hoặc sập**: Job bị báo lỗi nội bộ, Bull tự động retry lại sau. Tiến trình đăng ký sự kiện của sinh viên KHÔNG HỀ bị dội lỗi (Non-blocking).
-- **Thêm kênh thông báo mới**: Thiết kế Pattern cho phép lập trình viên tạo Class mới mà không cần đụng vô logic của core module Registration.
+## Error Scenarios
+- **Mail server error or outage**: The job records an internal failure and Bull retries later. The student's event registration flow is not rejected (Non-blocking).
+- **Adding a new notification channel**: The pattern lets developers create a new class without touching the core Registration module logic.
 
-## Ràng buộc
-- Luồng gửi thư bắt buộc phải chạy bất đồng bộ qua Bull Queue. Tuyệt đối không được gửi email chặn đồng bộ (blocking API response) trong luồng đăng ký.
-- Mọi email gửi ở môi trường hiện tại đều được nắn dòng chảy về MailHog để kiểm thử, không xả ra internet thật.
-- Các lỗi gửi thư chỉ được ghi Log, không rollback (hủy) giao dịch đăng ký thành công của người dùng.
+## Constraints
+- Email sending must run asynchronously through Bull Queue. Do not send email synchronously in a way that blocks the registration API response.
+- All emails in the current environment are routed to MailHog for testing and are not sent to the real internet.
+- Email sending errors are only logged and must not roll back the user's successful registration transaction.
 
-## Tiêu chí chấp nhận
-- Xác nhận đăng ký trả về ngay lập tức, ngay sau đó thư xác nhận nổi lên trong hộp thư MailHog.
-- Response time (độ trễ) của API đăng ký không bị dao động theo thời gian xử lý gửi thư.
-- Đảm bảo mở rộng dễ dàng (khi muốn gắn bot Telegram, Zalo v.v).
+## Acceptance Criteria
+- Registration confirmation returns immediately, and the confirmation email appears shortly afterward in the MailHog inbox.
+- The registration API response time does not fluctuate based on email processing time.
+- The system remains easy to extend when adding Telegram, Zalo, or similar bots.

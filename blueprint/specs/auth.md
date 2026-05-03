@@ -1,26 +1,26 @@
-# Đặc tả: Authentication & RBAC
+# Specification: Authentication & RBAC
 
-## Mô tả
-Cơ chế xác thực sử dụng JWT và hệ thống phân quyền (Role-Based Access Control) cho UniHub Workshop. Hệ thống định nghĩa sẵn 3 nhóm quyền cố định: `STUDENT`, `ORGANIZER`, `CHECKIN_STAFF`.
+## Description
+Authentication uses JWT and a Role-Based Access Control system for UniHub Workshop. The system defines three fixed role groups: `STUDENT`, `ORGANIZER`, and `CHECKIN_STAFF`.
 
-## Luồng chính
-1. Người dùng gửi thông tin đăng nhập (email, password) tới `POST /auth/login`.
-2. Backend kiểm tra tính hợp lệ của tài khoản.
-3. Nếu hợp lệ, backend phát hành một JWT chứa `id`, `email`, và `role`.
-4. Frontend lưu trữ token và tự động gắn vào header `Authorization: Bearer <token>` ở mọi request tiếp theo.
-5. NestJS Guards (`JwtAuthGuard` và `RolesGuard`) kiểm tra token và quyền hạn tại từng endpoint trước khi cho phép xử lý.
+## Main Flow
+1. The user sends login credentials (email, password) to `POST /auth/login`.
+2. The backend validates the account.
+3. If valid, the backend issues a JWT containing `id`, `email`, and `role`.
+4. The frontend stores the token and automatically attaches it to the `Authorization: Bearer <token>` header on every following request.
+5. NestJS Guards (`JwtAuthGuard` and `RolesGuard`) validate the token and role at each endpoint before allowing processing.
 
-## Kịch bản lỗi
-- **Sai thông tin đăng nhập**: Trả về lỗi HTTP 401 Unauthorized, không cấp token.
-- **Token hết hạn hoặc sai định dạng**: Trả về lỗi HTTP 401 Unauthorized khi truy cập endpoint được bảo vệ.
-- **Không đủ thẩm quyền**: Một `STUDENT` cố gọi API của `ORGANIZER` -> Trả về lỗi HTTP 403 Forbidden.
+## Error Scenarios
+- **Invalid credentials**: Return HTTP 401 Unauthorized and do not issue a token.
+- **Expired or malformed token**: Return HTTP 401 Unauthorized when accessing a protected endpoint.
+- **Insufficient authority**: A `STUDENT` attempts to call an `ORGANIZER` API -> return HTTP 403 Forbidden.
 
-## Ràng buộc
-- Secret key của JWT bắt buộc phải đọc từ biến môi trường (Environment Variable), không được hardcode.
-- Toàn bộ endpoint yêu cầu bảo mật phải được đánh dấu bằng decorator `@Roles()`.
-- Chức năng Refresh Token không thuộc phạm vi của phiên bản này.
+## Constraints
+- The JWT secret key must be read from an environment variable and must not be hardcoded.
+- Every secured endpoint must be marked with the `@Roles()` decorator.
+- Refresh Token support is outside the scope of this version.
 
-## Tiêu chí chấp nhận
-- Người dùng đăng nhập thành công sẽ nhận được JWT và dùng nó để gọi API.
-- Request thiếu token hoặc token sai sẽ bị từ chối bằng mã 401.
-- Request gọi sai thẩm quyền role sẽ bị từ chối bằng mã 403.
+## Acceptance Criteria
+- A user who logs in successfully receives a JWT and can use it to call APIs.
+- Requests with a missing or invalid token are rejected with status 401.
+- Requests using the wrong role are rejected with status 403.

@@ -1,26 +1,26 @@
-# Đặc tả: Đồng bộ sinh viên đêm (Student Sync)
+# Specification: Nightly Student Sync
 
-## Mô tả
-Chức năng tự động nhập dữ liệu sinh viên từ file CSV của hệ thống Quản lý sinh viên cũ (Legacy System) chạy vào lúc nửa đêm, tích hợp cơ chế ghi nhận lỗi Dead Letter Queue.
+## Description
+Automatically imports student data from a CSV file from the legacy Student Management System at midnight, with Dead Letter Queue style error recording.
 
-## Luồng chính
-1. Cronjob của Bull Queue kích hoạt vào lúc 02:00 sáng.
-2. Async Worker tải file CSV mới nhất, duyệt qua từng dòng.
-3. Mỗi dòng hợp lệ được thêm vào PostgreSQL thông qua câu lệnh UPSERT (`INSERT ... ON CONFLICT (student_id) DO UPDATE`).
-4. Dòng dữ liệu bị hỏng định dạng được ghi chép vào mảng lỗi `errorDetails` thay vì ném ra Exception làm gián đoạn.
-5. Tổng hợp báo cáo vào `StudentSyncLog` với thông tin tổng số dòng, số dòng nhập thành công và chi tiết lỗi.
+## Main Flow
+1. A Bull Queue cronjob triggers at 02:00.
+2. The async worker loads the latest CSV file and iterates through each row.
+3. Each valid row is written to PostgreSQL through an UPSERT statement (`INSERT ... ON CONFLICT (student_id) DO UPDATE`).
+4. Malformed rows are recorded in the `errorDetails` array instead of throwing an exception that interrupts the run.
+5. A report is written to `StudentSyncLog` with total rows, imported rows, and error details.
 
-## Kịch bản lỗi
-- **Thiếu file CSV hoặc không đọc được**: Job thất bại gracefully, sinh ra log `StudentSyncLog` với tổng số lỗi bằng tổng dòng.
-- **Lỗi ở một dòng cụ thể**: Dòng đó bị bỏ qua, lỗi được ghi chú lại, tiến trình vẫn tiếp tục cho các dòng kế tiếp (Dead Letter Queue pattern).
-- **Trùng lặp sinh viên (student_id)**: Câu lệnh UPSERT tự động cập nhật thông tin mới nhất mà không gây xung đột (No Error).
+## Error Scenarios
+- **Missing or unreadable CSV file**: The job fails gracefully and creates a `StudentSyncLog` with total errors equal to total rows.
+- **Error in a specific row**: That row is skipped, the error is recorded, and processing continues for the following rows (Dead Letter Queue pattern).
+- **Duplicate student (`student_id`)**: The UPSERT statement automatically updates the latest information without conflict (No Error).
 
-## Ràng buộc
-- Quá trình nhập liệu bắt buộc phải an toàn để có thể chạy lại file cũ nhiều lần (Idempotent upsert).
-- Một lỗi cục bộ tại một dòng CSV KHÔNG ĐƯỢC PHÉP làm chết toàn bộ mẻ đồng bộ (Batch batch).
-- Giờ hẹn cronjob tránh khung giờ cao điểm đăng ký (chỉ định sẵn là 02:00 sáng).
+## Constraints
+- The import process must be safe to rerun on the same old file multiple times (idempotent upsert).
+- A local error in one CSV row must not kill the entire sync batch.
+- The cron schedule must avoid peak registration hours and is fixed at 02:00.
 
-## Tiêu chí chấp nhận
-- Dữ liệu CSV được nhập tự động và không bị nhân bản bản ghi kể cả khi cronjob chạy lặp lại cùng một file.
-- `StudentSyncLog` báo cáo đầy đủ, chính xác, giúp Admin kiểm soát được dữ liệu bẩn.
-- Có tính năng cho Admin chủ động kích hoạt chạy lệnh đồng bộ này ngay trên giao diện nội bộ.
+## Acceptance Criteria
+- CSV data is imported automatically without duplicate records, even when the cronjob runs repeatedly on the same file.
+- `StudentSyncLog` reports fully and accurately, helping Admins monitor dirty data.
+- Admins can manually trigger this sync from the internal interface.

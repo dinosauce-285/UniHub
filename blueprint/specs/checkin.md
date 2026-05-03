@@ -1,26 +1,26 @@
-# Đặc tả: Check-in Offline & Online
+# Specification: Offline & Online Check-in
 
-## Mô tả
-Tính năng hỗ trợ nhân sự sự kiện điểm danh sinh viên bằng cách quét mã QR qua PWA. Ứng dụng hỗ trợ ghi nhận điểm danh ngay cả khi mất kết nối mạng và tự động đồng bộ khi có mạng trở lại.
+## Description
+Supports event staff in checking students in by scanning QR codes through the PWA. The app supports recording check-ins even when the network is unavailable and automatically syncs when connectivity returns.
 
-## Luồng chính
-1. Nhân sự điểm danh quét mã QR của sinh viên tại cửa phòng.
-2. **Khi có mạng (Online)**: PWA gọi thẳng API `POST /checkin/validate`. Backend ghi nhận `CheckinLog`.
-3. **Khi mất mạng (Offline)**: PWA lưu log điểm danh tạm thời vào IndexedDB `pending_checkins` và hiển thị nhãn OFFLINE.
-4. Khi thiết bị có sóng trở lại (sự kiện `navigator.onLine`), PWA tự động gom dữ liệu đẩy lên `POST /checkin/sync`.
-5. Backend ghi nhận các log hợp lệ, PWA xóa dữ liệu tương ứng khỏi IndexedDB.
+## Main Flow
+1. Check-in staff scan the student's QR code at the room entrance.
+2. **Online**: The PWA calls `POST /checkin/validate` directly. The backend records a `CheckinLog`.
+3. **Offline**: The PWA stores temporary check-in logs in IndexedDB `pending_checkins` and shows an OFFLINE label.
+4. When the device reconnects (the `navigator.onLine` event), the PWA automatically batches the data and pushes it to `POST /checkin/sync`.
+5. The backend records valid logs, and the PWA removes the corresponding data from IndexedDB.
 
-## Kịch bản lỗi
-- **QR không hợp lệ**: API trả về 404, hiển thị lỗi trên màn hình.
-- **QR đã được check-in**: API trả về 409 (Conflict) "already checked in", báo cho nhân sự biết vé đã được dùng.
-- **Lỗi đồng bộ đứt quãng**: PWA gửi cục dữ liệu nhưng rớt mạng giữa chừng. Khi có mạng, PWA gửi lại toàn bộ cục dữ liệu -> API đảm bảo tính Idempotent (chỉ thêm mới dữ liệu chưa tồn tại, không tạo bản sao).
+## Error Scenarios
+- **Invalid QR**: The API returns 404 and shows an error on screen.
+- **QR already checked in**: The API returns 409 (Conflict) "already checked in" and informs staff that the ticket has already been used.
+- **Interrupted sync**: The PWA sends a data batch but the network drops halfway through. When online again, the PWA resends the whole batch -> the API guarantees idempotency by only inserting data that does not already exist and avoiding duplicates.
 
-## Ràng buộc
-- Hàng đợi điểm danh offline bắt buộc lưu ở `IndexedDB` để sống sót qua việc tải lại tab (refresh) hoặc tắt app. Không dùng `sessionStorage`.
-- Endpoint đồng bộ `POST /checkin/sync` phải là một khối lệnh UPSERT an toàn với việc gửi lặp.
-- API quét mã bắt buộc yêu cầu role `CHECKIN_STAFF`.
+## Constraints
+- The offline check-in queue must be stored in `IndexedDB` so it survives tab refreshes or app closure. Do not use `sessionStorage`.
+- The sync endpoint `POST /checkin/sync` must be a retry-safe UPSERT block.
+- The scan API must require the `CHECKIN_STAFF` role.
 
-## Tiêu chí chấp nhận
-- Sinh viên có mạng quét QR sẽ được ghi nhận vào CSDL ngay lập tức.
-- Vé quét lúc mất mạng không bị mất đi, điểm danh thành công sau khi có mạng mà không bị nhân bản log.
-- Ứng dụng cảnh báo rõ ràng khi chuyển sang chế độ Offline.
+## Acceptance Criteria
+- Students scanned while online are recorded in the database immediately.
+- Tickets scanned while offline are not lost and are checked in successfully after reconnection without duplicated logs.
+- The application clearly warns users when it switches to Offline mode.
