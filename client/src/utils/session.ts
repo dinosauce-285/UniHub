@@ -1,4 +1,4 @@
-import type { AuthUser } from './types';
+import type { AuthUser } from '../types/auth';
 
 const TOKEN_KEY = 'unihub.accessToken';
 const REFRESH_TOKEN_KEY = 'unihub.refreshToken';

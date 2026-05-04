@@ -1,14 +1,14 @@
 import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
-import { loginRequest, logoutRequest, refreshRequest } from './api';
+import { loginRequest, logoutRequest, refreshRequest } from '../lib/authApi';
 import {
   clearStoredAuth,
   getStoredRefreshToken,
   getStoredToken,
   getStoredUser,
   storeAuth,
-} from './session';
-import type { AuthResponse, AuthUser, LoginCredentials } from './types';
+} from '../utils/session';
+import type { AuthResponse, AuthUser, LoginCredentials } from '../types/auth';
 
 type AuthState = {
   accessToken: string | null;
