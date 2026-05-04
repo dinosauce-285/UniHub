@@ -93,7 +93,7 @@ sequenceDiagram
 
 ## Credential Strategy
 
-Use a one-way password hash stored on `User.passwordHash`. To keep the change dependency-light, use Node's built-in `crypto.scrypt` or `crypto.pbkdf2` with per-password salt encoded in the stored hash string. The auth service only compares hashes; it never returns `passwordHash` in responses or JWT payloads.
+Use a one-way password hash stored on `User.passwordHash`. Passwords are hashed with `bcrypt` using a cost factor of at least 10. The auth service only compares hashes; it never returns `passwordHash` in responses or JWT payloads.
 
 Seed data should assign a documented local demo password for students, organizers, and check-in staff, such as `Password123!`, so manual verification is repeatable.
 

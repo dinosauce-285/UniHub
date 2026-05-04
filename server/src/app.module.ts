@@ -12,6 +12,7 @@ import { CheckinModule } from './modules/checkin/checkin.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudentSyncModule } from './modules/student-sync/student-sync.module';
 import { AiSummaryModule } from './modules/ai-summary/ai-summary.module';
+import { StudentsModule } from './modules/students/students.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AiSummaryModule } from './modules/ai-summary/ai-summary.module';
     NotificationModule,
     StudentSyncModule,
     AiSummaryModule,
+    StudentsModule,
   ],
   controllers: [AppController],
 })

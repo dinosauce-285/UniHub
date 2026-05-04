@@ -12,7 +12,7 @@ Explore the UniHub Workshop repository without making changes.
 ## Source Of Truth
 
 - Product and technical specs live in `blueprint/`.
-- Read `blueprint/proposal.md`, `blueprint/design.md`, and relevant files in `blueprint/specs/`.
+- Read `blueprint/proposal.md`, `blueprint/design.md`, and relevant files in `openspec/specs/`.
 - Follow `blueprint/design.md` & `blueprint/proposal.md` 
 - Real application paths are `server/` and `client/`.
 
