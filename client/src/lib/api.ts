@@ -1,11 +1,11 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import type { AuthResponse } from '../features/auth/types';
+import type { AuthResponse } from '../types/auth';
 import {
   clearStoredAuth,
   getStoredRefreshToken,
   getStoredToken,
   storeAuth,
-} from '../features/auth/session';
+} from '../utils/session';
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;

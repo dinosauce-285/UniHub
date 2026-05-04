@@ -12,7 +12,7 @@ Prepare a small implementation plan for UniHub Workshop.
 ## Source Of Truth
 
 - `blueprint/proposal.md`, `blueprint/design.md`, and `blueprint/specs/*.md` define the product and technical scope.
-- `TASK.MD` is planning context only.
+- Follow `blueprint/design.md` & `blueprint/proposal.md` 
 - Use `server/` for NestJS and `client/` for React.
 
 ## Workflow

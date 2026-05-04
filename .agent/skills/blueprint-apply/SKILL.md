@@ -12,7 +12,7 @@ Implement a specific requested UniHub task.
 ## Source Of Truth
 
 - Read the relevant files in `blueprint/` before editing.
-- `TASK.MD` is planning context only.
+- Follow `blueprint/design.md` & `blueprint/proposal.md` 
 - Application code lives in `server/` and `client/`.
 
 ## Workflow

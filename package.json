@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n server,client -c cyan,magenta \"npm --prefix server run start:dev\" \"npm --prefix client run dev\"",
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
     "dev:client": "npm --prefix client run dev",
-    "dev:server": "npm --prefix server run start:dev",
+    "dev:server": "npm --prefix server run dev",
     "build": "npm --prefix server run build && npm --prefix client run build",
     "seed": "npm --prefix server run seed",
     "commit": "node commit.js"

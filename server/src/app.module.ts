@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { HealthModule } from './modules/health/health.module';
 import { PrismaModule } from './core/prisma/prisma.module';
+import { RedisModule } from './core/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { WorkshopModule } from './modules/workshop/workshop.module';
 import { RegistrationModule } from './modules/registration/registration.module';
@@ -16,6 +17,7 @@ import { AiSummaryModule } from './modules/ai-summary/ai-summary.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    RedisModule,
     HealthModule,
     AuthModule,
     WorkshopModule,

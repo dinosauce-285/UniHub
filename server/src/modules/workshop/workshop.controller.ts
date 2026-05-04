@@ -1,17 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
+import { WorkshopService } from './workshop.service';
 
 @Controller('workshops')
 export class WorkshopController {
+  constructor(private readonly workshopService: WorkshopService) {}
+
   @Get()
   list() {
-    return [
-      {
-        id: 'demo-workshop',
-        title: 'Building Scalable Workshop Platforms',
-        speaker: 'UniHub Team',
-        totalSlots: 120,
-      },
-    ];
+    return this.workshopService.list();
   }
 }
-

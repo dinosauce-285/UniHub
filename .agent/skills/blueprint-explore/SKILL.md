@@ -13,7 +13,7 @@ Explore the UniHub Workshop repository without making changes.
 
 - Product and technical specs live in `blueprint/`.
 - Read `blueprint/proposal.md`, `blueprint/design.md`, and relevant files in `blueprint/specs/`.
-- Use `TASK.MD` only as planning context.
+- Follow `blueprint/design.md` & `blueprint/proposal.md` 
 - Real application paths are `server/` and `client/`.
 
 ## Workflow
