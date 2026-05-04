@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/auth/LoginPage';
 import { StudentWorkspace } from './pages/student/StudentWorkspace';
+import { StudentsPage } from './pages/organizer/StudentsPage';
 import { ProtectedRoute, roleHome } from './components/ProtectedRoute';
 import { RoleWorkspacePlaceholder, WorkspaceLayout } from './layouts/WorkspaceLayout';
 
@@ -30,7 +31,7 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['ORGANIZER']}>
             <WorkspaceLayout role="ORGANIZER">
-              <RoleWorkspacePlaceholder role="ORGANIZER" />
+              <StudentsPage />
             </WorkspaceLayout>
           </ProtectedRoute>
         }

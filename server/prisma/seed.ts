@@ -110,6 +110,15 @@ async function seedUsers() {
   });
 }
 
+async function resetDatabase() {
+  await prisma.checkinLog.deleteMany();
+  await prisma.registration.deleteMany();
+  await prisma.refreshToken.deleteMany();
+  await prisma.studentSyncLog.deleteMany();
+  await prisma.workshop.deleteMany();
+  await prisma.user.deleteMany();
+}
+
 async function seedWorkshops() {
   const workshops = [
     {
@@ -257,6 +266,7 @@ async function seedRegistrations() {
 }
 
 async function main() {
+  await resetDatabase();
   await seedUsers();
   await seedWorkshops();
   await seedRegistrations();
