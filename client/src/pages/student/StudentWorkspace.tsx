@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   createRegistration,
   listMyRegistrations,
-  listWorkshops,
 } from '../../lib/registrationApi';
+import { listWorkshops } from '../../lib/workshopsApi';
 import type { Registration, Workshop } from '../../types/registration';
 import { getApiErrorMessage } from '../../utils/errors';
 import { formatPrice, formatSchedule } from '../../utils/formatters';
+
+const SLOT_POLL_INTERVAL_MS = 10_000;
 
 export function StudentWorkspace() {
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
@@ -16,9 +19,11 @@ export function StudentWorkspace() {
   const [actionWorkshopId, setActionWorkshopId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
+  const [refreshWarning, setRefreshWarning] = useState('');
 
   useEffect(() => {
     let isMounted = true;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function loadRegistrationData() {
       setIsLoading(true);
@@ -50,10 +55,61 @@ export function StudentWorkspace() {
       }
     }
 
+    async function refreshWorkshopSlots() {
+      if (!isMounted || document.visibilityState !== 'visible') {
+        return;
+      }
+
+      try {
+        const workshopData = await listWorkshops();
+
+        if (isMounted) {
+          setWorkshops(workshopData);
+          setRefreshWarning('');
+          schedulePoll();
+        }
+      } catch (error) {
+        if (isMounted) {
+          setRefreshWarning(
+            getApiErrorMessage(
+              error,
+              'Unable to refresh slot counts. Showing the last successful update.',
+            ),
+          );
+          schedulePoll();
+        }
+      }
+    }
+
+    function schedulePoll() {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+      }
+
+      if (document.visibilityState === 'visible') {
+        pollTimer = setTimeout(refreshWorkshopSlots, SLOT_POLL_INTERVAL_MS);
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        refreshWorkshopSlots();
+      } else if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = undefined;
+      }
+    }
+
     loadRegistrationData();
+    schedulePoll();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       isMounted = false;
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -123,6 +179,12 @@ export function StudentWorkspace() {
       {actionError ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
           {actionError}
+        </p>
+      ) : null}
+
+      {refreshWarning ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
+          {refreshWarning}
         </p>
       ) : null}
 
@@ -205,7 +267,12 @@ export function StudentWorkspace() {
                   </span>
                 </div>
                 <h3 className="mt-4 text-lg font-semibold text-ink">
-                  {workshop.title}
+                  <Link
+                    className="hover:text-primary"
+                    to={`/student/workshops/${workshop.id}`}
+                  >
+                    {workshop.title}
+                  </Link>
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-muted">
                   {workshop.description}
@@ -254,6 +321,12 @@ export function StudentWorkspace() {
                         ? 'Claiming seat...'
                         : 'Claim seat'}
                 </button>
+                <Link
+                  className="mt-3 block text-center text-sm font-semibold text-primary hover:text-primary/80"
+                  to={`/student/workshops/${workshop.id}`}
+                >
+                  View details
+                </Link>
               </article>
             );
           })}
