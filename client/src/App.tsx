@@ -3,6 +3,7 @@ import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/auth/LoginPage';
 import { StudentWorkspace } from './pages/student/StudentWorkspace';
 import { StudentsPage } from './pages/organizer/StudentsPage';
+import { WorkshopsPage } from './pages/organizer/WorkshopsPage';
 import { ProtectedRoute, roleHome } from './components/ProtectedRoute';
 import { RoleWorkspacePlaceholder, WorkspaceLayout } from './layouts/WorkspaceLayout';
 
@@ -32,6 +33,16 @@ export default function App() {
           <ProtectedRoute allowedRoles={['ORGANIZER']}>
             <WorkspaceLayout role="ORGANIZER">
               <StudentsPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organizer/workshops"
+        element={
+          <ProtectedRoute allowedRoles={['ORGANIZER']}>
+            <WorkspaceLayout role="ORGANIZER">
+              <WorkshopsPage />
             </WorkspaceLayout>
           </ProtectedRoute>
         }

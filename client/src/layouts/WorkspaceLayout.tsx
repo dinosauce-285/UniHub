@@ -25,17 +25,29 @@ export function WorkspaceLayout({
           <Link className="text-lg font-semibold text-ink" to={roleHome(role)}>
             UniHub
           </Link>
-          <div className="flex items-center gap-3">
-            <span className="rounded-md bg-surface-muted px-3 py-1 text-sm text-muted">
-              {user?.name} - {roleLabels[role]}
-            </span>
-            <button
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-muted"
-              type="button"
-              onClick={logout}
-            >
-              Log out
-            </button>
+          <div className="flex items-center gap-6">
+            {role === 'ORGANIZER' && (
+              <nav className="flex gap-4 text-sm font-medium">
+                <Link className="text-muted hover:text-ink" to="/organizer">
+                  Students (CSV)
+                </Link>
+                <Link className="text-muted hover:text-ink" to="/organizer/workshops">
+                  Workshops (AI)
+                </Link>
+              </nav>
+            )}
+            <div className="flex items-center gap-3 border-l border-border pl-6">
+              <span className="rounded-md bg-surface-muted px-3 py-1 text-sm text-muted">
+                {user?.name} - {roleLabels[role]}
+              </span>
+              <button
+                className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-muted"
+                type="button"
+                onClick={logout}
+              >
+                Log out
+              </button>
+            </div>
           </div>
         </div>
       </header>
