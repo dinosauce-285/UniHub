@@ -1,5 +1,6 @@
 import { api } from './api';
-import type { Registration, Workshop } from '../types/registration';
+import { listWorkshops } from './workshopsApi';
+import type { Registration } from '../types/registration';
 
 function createIdempotencyKey() {
   if ('randomUUID' in crypto) {
@@ -9,10 +10,7 @@ function createIdempotencyKey() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export async function listWorkshops() {
-  const response = await api.get<Workshop[]>('/workshops');
-  return response.data;
-}
+export { listWorkshops };
 
 export async function listMyRegistrations() {
   const response = await api.get<Registration[]>('/registrations/me');
