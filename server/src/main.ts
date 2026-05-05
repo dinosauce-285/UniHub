@@ -1,9 +1,18 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const uploadRoot = join(process.cwd(), 'uploads');
+
+  mkdirSync(join(uploadRoot, 'room-maps'), { recursive: true });
+  app.useStaticAssets(uploadRoot, {
+    prefix: '/api/uploads/',
+  });
 
   app.enableCors({
     origin: ['http://localhost:5173'],
@@ -23,4 +32,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-
