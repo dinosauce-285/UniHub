@@ -27,6 +27,7 @@ Prepare a small implementation plan for UniHub Workshop.
 ## Output
 
 Do not just return a textual plan. Create an implementation proposal in `openspec/changes/<change-name>/` with the following files:
+- `/specs/<spec-name>/spec.md`: the spec file for the feature to be implemented.
 - `proposal.md`: A high-level overview explaining "Why", "What Changes", "Capabilities", and "Impact".
 - `design.md`: Technical details including "Overview", "Flow" (with Mermaid diagrams), "Module Mapping", etc.
 - `tasks.md`: A detailed implementation plan broken down into actionable checkbox tasks (e.g., `## 1. Backend`, `- [ ] 1.1 ...`).
