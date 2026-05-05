@@ -1,4 +1,4 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { Role } from '../../../generated/prisma/enums';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -12,21 +12,22 @@ export class StudentSyncController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ORGANIZER)
-  getInfo() {
-    return this.studentSyncService.getStatus();
+  listLogs(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sort') sort?: 'asc' | 'desc',
+  ) {
+    return this.studentSyncService.listLogs({
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      sort,
+    });
   }
 
-  @Get('logs')
+  @Post('trigger')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ORGANIZER)
-  listLogs() {
-    return this.studentSyncService.listLogs();
-  }
-
-  @Post('run')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ORGANIZER)
-  runNow() {
+  triggerSync() {
     return this.studentSyncService.enqueueManualSync();
   }
 }
