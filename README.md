@@ -25,6 +25,13 @@ Monorepo scaffold for the UniHub workshop platform.
    `npm run start:dev`
    `cd ../client && npm run dev`
 
+## AI Configuration (Groq)
+
+To test the AI Summary feature when uploading workshop PDFs, you need a free Groq API key:
+1. Visit [console.groq.com/keys](https://console.groq.com/keys) to sign up and generate an API key.
+2. Open your `.env` (and `server/.env`) file and set the key:
+   `GROQ_API_KEY=your_key_here`
+
 ## Useful URLs
 
 - API: `http://localhost:3000`
