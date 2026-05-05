@@ -32,7 +32,7 @@ export function WorkspaceLayout({
                   Students (CSV)
                 </Link>
                 <Link className="text-muted hover:text-ink" to="/organizer/workshops">
-                  Workshops (AI)
+                  Workshops
                 </Link>
                 <Link className="text-muted hover:text-ink" to="/organizer/student-sync">
                   Student sync

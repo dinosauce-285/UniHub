@@ -2,9 +2,11 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/auth/LoginPage';
 import { StudentWorkspace } from './pages/student/StudentWorkspace';
+import { WorkshopDetailPage } from './pages/student/WorkshopDetailPage';
 import { StudentsPage } from './pages/organizer/StudentsPage';
 import { StudentSyncPage } from './pages/organizer/StudentSyncPage';
 import { WorkshopsPage } from './pages/organizer/WorkshopsPage';
+import { OrganizerWorkshopFormPage } from './pages/organizer/OrganizerWorkshopFormPage';
 import { ProtectedRoute, roleHome } from './components/ProtectedRoute';
 import { RoleWorkspacePlaceholder, WorkspaceLayout } from './layouts/WorkspaceLayout';
 
@@ -29,6 +31,16 @@ export default function App() {
         }
       />
       <Route
+        path="/student/workshops/:id"
+        element={
+          <ProtectedRoute allowedRoles={['STUDENT']}>
+            <WorkspaceLayout role="STUDENT">
+              <WorkshopDetailPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/organizer"
         element={
           <ProtectedRoute allowedRoles={['ORGANIZER']}>
@@ -44,6 +56,26 @@ export default function App() {
           <ProtectedRoute allowedRoles={['ORGANIZER']}>
             <WorkspaceLayout role="ORGANIZER">
               <WorkshopsPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organizer/workshops/new"
+        element={
+          <ProtectedRoute allowedRoles={['ORGANIZER']}>
+            <WorkspaceLayout role="ORGANIZER">
+              <OrganizerWorkshopFormPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organizer/workshops/:id/edit"
+        element={
+          <ProtectedRoute allowedRoles={['ORGANIZER']}>
+            <WorkspaceLayout role="ORGANIZER">
+              <OrganizerWorkshopFormPage />
             </WorkspaceLayout>
           </ProtectedRoute>
         }
