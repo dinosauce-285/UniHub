@@ -34,6 +34,9 @@ export function WorkspaceLayout({
                 <Link className="text-muted hover:text-ink" to="/organizer/workshops">
                   Workshops (AI)
                 </Link>
+                <Link className="text-muted hover:text-ink" to="/organizer/student-sync">
+                  Student sync
+                </Link>
               </nav>
             )}
             <div className="flex items-center gap-3 border-l border-border pl-6">

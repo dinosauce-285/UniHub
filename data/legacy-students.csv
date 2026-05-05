@@ -1,0 +1,6 @@
+student_id,name,email
+SV001,Student One,student1@unihub.local
+SV002,Student Two,student2@unihub.local
+SV003,Student Three,student3@unihub.local
+SV004,Missing Email,
+SV005,Invalid Email,not-an-email
