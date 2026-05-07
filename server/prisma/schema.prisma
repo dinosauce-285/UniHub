@@ -34,6 +34,12 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum PaymentAttemptStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
 model User {
   id            String         @id @default(cuid())
   studentId     String?        @unique
@@ -91,8 +97,24 @@ model Registration {
   user           User               @relation(fields: [userId], references: [id])
   workshop       Workshop           @relation(fields: [workshopId], references: [id])
   checkinLog     CheckinLog?
+  paymentAttempts PaymentAttempt[]
 
   @@unique([userId, workshopId])
+}
+
+model PaymentAttempt {
+  id             String               @id @default(cuid())
+  registrationId String
+  idempotencyKey String               @unique
+  status         PaymentAttemptStatus @default(PENDING)
+  amount         Int
+  gatewayRef     String?              @unique
+  responseJson   Json?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  registration   Registration         @relation(fields: [registrationId], references: [id])
+
+  @@index([registrationId])
 }
 
 model CheckinLog {
