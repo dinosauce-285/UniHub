@@ -13,6 +13,11 @@ import {
 } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { RedisService } from '../../core/redis/redis.service';
+import { NotificationService } from '../notification/notification.service';
+import {
+  REGISTRATION_CONFIRMED_JOB,
+  type RegistrationNotificationJob,
+} from '../notification/notification.types';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 
 const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
@@ -28,6 +33,12 @@ type WorkshopSummary = {
   price: number;
 };
 
+type UserSummary = {
+  id: string;
+  email: string;
+  name: string;
+};
+
 type RegistrationRecord = {
   id: string;
   userId: string;
@@ -37,6 +48,7 @@ type RegistrationRecord = {
   qrCode: string | null;
   createdAt: Date;
   workshop: WorkshopSummary;
+  user: UserSummary;
 };
 
 const workshopSummarySelect = {
@@ -50,11 +62,18 @@ const workshopSummarySelect = {
   price: true,
 } as const;
 
+const userSummarySelect = {
+  id: true,
+  email: true,
+  name: true,
+} as const;
+
 @Injectable()
 export class RegistrationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async create(
@@ -116,6 +135,9 @@ export class RegistrationService {
             workshop: {
               select: workshopSummarySelect,
             },
+            user: {
+              select: userSummarySelect,
+            },
           },
         });
 
@@ -153,6 +175,9 @@ export class RegistrationService {
 
     const response = await this.toResponse(registration);
     await this.cacheResponse(idempotencyKey, response);
+    await this.notificationService.enqueueRegistrationConfirmation(
+      this.toNotificationJob(registration),
+    );
     return response;
   }
 
@@ -163,6 +188,9 @@ export class RegistrationService {
       include: {
         workshop: {
           select: workshopSummarySelect,
+        },
+        user: {
+          select: userSummarySelect,
         },
       },
     });
@@ -193,6 +221,9 @@ export class RegistrationService {
       include: {
         workshop: {
           select: workshopSummarySelect,
+        },
+        user: {
+          select: userSummarySelect,
         },
       },
     });
@@ -253,6 +284,28 @@ export class RegistrationService {
         : null,
       createdAt: registration.createdAt,
       workshop: registration.workshop,
+    };
+  }
+
+  private toNotificationJob(
+    registration: RegistrationRecord,
+  ): RegistrationNotificationJob {
+    return {
+      type: REGISTRATION_CONFIRMED_JOB,
+      registrationId: registration.id,
+      userId: registration.userId,
+      studentEmail: registration.user.email,
+      studentName: registration.user.name,
+      workshop: {
+        id: registration.workshop.id,
+        title: registration.workshop.title,
+        room: registration.workshop.room,
+        startTime: registration.workshop.startTime.toISOString(),
+        endTime: registration.workshop.endTime.toISOString(),
+        isPaid: registration.workshop.isPaid,
+      },
+      paymentStatus: registration.paymentStatus,
+      qrCode: registration.qrCode,
     };
   }
 
