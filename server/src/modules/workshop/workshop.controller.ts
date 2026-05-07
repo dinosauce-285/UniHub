@@ -10,10 +10,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { Role } from '../../../generated/prisma/enums';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { RATE_LIMIT_POLICIES } from '../../core/rate-limiting/rate-limit.constants';
 import { CreateWorkshopDto } from './dto/create-workshop.dto';
 import { UpdateWorkshopDto } from './dto/update-workshop.dto';
 import { UpdateWorkshopStatusDto } from './dto/update-workshop-status.dto';
@@ -26,6 +28,7 @@ export class WorkshopController {
   constructor(private readonly workshopService: WorkshopService) {}
 
   @Get()
+  @Throttle({ default: RATE_LIMIT_POLICIES.workshopRead })
   list() {
     return this.workshopService.list();
   }
@@ -38,6 +41,7 @@ export class WorkshopController {
   }
 
   @Get(':id')
+  @Throttle({ default: RATE_LIMIT_POLICIES.workshopRead })
   findPublic(@Param('id') id: string) {
     return this.workshopService.findPublic(id);
   }
