@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Toast, type ToastState } from '../../components/Toast';
 import {
   createRegistration,
   listMyRegistrations,
@@ -17,8 +18,7 @@ export function StudentWorkspace() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingError, setLoadingError] = useState('');
   const [actionWorkshopId, setActionWorkshopId] = useState<string | null>(null);
-  const [notice, setNotice] = useState('');
-  const [actionError, setActionError] = useState('');
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [refreshWarning, setRefreshWarning] = useState('');
 
   useEffect(() => {
@@ -119,8 +119,6 @@ export function StudentWorkspace() {
     );
 
     setActionWorkshopId(workshop.id);
-    setActionError('');
-    setNotice('');
 
     try {
       const registration = await createRegistration(workshop.id);
@@ -139,14 +137,23 @@ export function StudentWorkspace() {
         );
       }
 
-      setNotice(`Seat confirmed for ${registration.workshop.title}.`);
+      setToast({
+        id: Date.now(),
+        message:
+          registration.paymentStatus === 'PENDING'
+            ? `Seat held for ${registration.workshop.title}. Email confirmation is being sent. Complete payment from My workshops.`
+            : `Seat confirmed for ${registration.workshop.title}. Email confirmation is being sent.`,
+        variant: 'success',
+      });
     } catch (error) {
-      setActionError(
-        getApiErrorMessage(
+      setToast({
+        id: Date.now(),
+        message: getApiErrorMessage(
           error,
           'Unable to register for this workshop. Please try again.',
         ),
-      );
+        variant: 'warning',
+      });
     } finally {
       setActionWorkshopId(null);
     }
@@ -156,6 +163,8 @@ export function StudentWorkspace() {
 
   return (
     <div className="space-y-8">
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
+
       <div className="rounded-lg border border-border bg-surface p-6 shadow-card">
         <p className="text-sm font-semibold uppercase tracking-wide text-primary">
           Student registration
@@ -176,21 +185,9 @@ export function StudentWorkspace() {
         </p>
       ) : null}
 
-      {actionError ? (
-        <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
-          {actionError}
-        </p>
-      ) : null}
-
       {refreshWarning ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
           {refreshWarning}
-        </p>
-      ) : null}
-
-      {notice ? (
-        <p className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-ink">
-          {notice}
         </p>
       ) : null}
 
@@ -357,14 +354,32 @@ export function StudentWorkspace() {
                   {registration.status} - {registration.paymentStatus} -{' '}
                   {registration.workshop.room}
                 </p>
+                {registration.workshop.isPaid &&
+                registration.paymentStatus === 'PENDING' ? (
+                  <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
+                    Payment pending. Complete payment to finish this paid
+                    registration.
+                  </p>
+                ) : null}
               </div>
-              {registration.qrCodeImage ? (
-                <img
-                  className="h-20 w-20 rounded-md border border-border bg-surface p-1"
-                  src={registration.qrCodeImage}
-                  alt={`QR code for ${registration.workshop.title}`}
-                />
-              ) : null}
+              <div className="flex items-center gap-3">
+                {registration.workshop.isPaid &&
+                registration.paymentStatus === 'PENDING' ? (
+                  <Link
+                    className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-contrast transition hover:bg-primary/90"
+                    to={`/student/payments/${registration.id}`}
+                  >
+                    Complete payment
+                  </Link>
+                ) : null}
+                {registration.qrCodeImage ? (
+                  <img
+                    className="h-20 w-20 rounded-md border border-border bg-surface p-1"
+                    src={registration.qrCodeImage}
+                    alt={`QR code for ${registration.workshop.title}`}
+                  />
+                ) : null}
+              </div>
             </article>
           ))}
 

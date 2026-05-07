@@ -3,6 +3,7 @@ import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/auth/LoginPage';
 import { StudentWorkspace } from './pages/student/StudentWorkspace';
 import { WorkshopDetailPage } from './pages/student/WorkshopDetailPage';
+import { PaymentPage } from './pages/student/PaymentPage';
 import { StudentsPage } from './pages/organizer/StudentsPage';
 import { StudentSyncPage } from './pages/organizer/StudentSyncPage';
 import { WorkshopsPage } from './pages/organizer/WorkshopsPage';
@@ -36,6 +37,16 @@ export default function App() {
           <ProtectedRoute allowedRoles={['STUDENT']}>
             <WorkspaceLayout role="STUDENT">
               <WorkshopDetailPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/payments/:registrationId"
+        element={
+          <ProtectedRoute allowedRoles={['STUDENT']}>
+            <WorkspaceLayout role="STUDENT">
+              <PaymentPage />
             </WorkspaceLayout>
           </ProtectedRoute>
         }

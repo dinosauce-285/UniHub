@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { createRegistration, listMyRegistrations } from '../../lib/registrationApi';
+import { Toast, type ToastState } from '../../components/Toast';
+import {
+  createRegistration,
+  listMyRegistrations,
+} from '../../lib/registrationApi';
 import { getWorkshop, resolveRoomMapUrl } from '../../lib/workshopsApi';
 import type { Registration, Workshop } from '../../types/registration';
 import { getApiErrorMessage } from '../../utils/errors';
@@ -17,7 +21,7 @@ export function WorkshopDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [toast, setToast] = useState<ToastState | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -65,7 +69,6 @@ export function WorkshopDetailPage() {
     try {
       setIsRegistering(true);
       setError('');
-      setNotice('');
       const registration = await createRegistration(workshop.id);
       setRegistrations((current) => [
         registration,
@@ -76,11 +79,23 @@ export function WorkshopDetailPage() {
           ? { ...current, slotLeft: Math.max(current.slotLeft - 1, 0) }
           : current,
       );
-      setNotice(`Seat confirmed for ${registration.workshop.title}.`);
+      setToast({
+        id: Date.now(),
+        message:
+          registration.paymentStatus === 'PENDING'
+            ? `Seat held for ${registration.workshop.title}. Email confirmation is being sent. Complete payment from this page.`
+            : `Seat confirmed for ${registration.workshop.title}. Email confirmation is being sent.`,
+        variant: 'success',
+      });
     } catch (err) {
-      setError(
-        getApiErrorMessage(err, 'Unable to register for this workshop.'),
-      );
+      setToast({
+        id: Date.now(),
+        message: getApiErrorMessage(
+          err,
+          'Unable to register for this workshop.',
+        ),
+        variant: 'warning',
+      });
     } finally {
       setIsRegistering(false);
     }
@@ -88,6 +103,12 @@ export function WorkshopDetailPage() {
 
   const isRegistered = registrations.some(
     (registration) => registration.workshopId === workshop?.id,
+  );
+  const pendingPaymentRegistration = registrations.find(
+    (registration) =>
+      registration.workshopId === workshop?.id &&
+      registration.workshop.isPaid &&
+      registration.paymentStatus === 'PENDING',
   );
   const isFull = (workshop?.slotLeft ?? 0) <= 0;
   const resolvedRoomMapUrl = workshop?.roomMapUrl
@@ -103,6 +124,8 @@ export function WorkshopDetailPage() {
 
   return (
     <div className="space-y-6">
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
+
       <Link className="text-sm font-semibold text-primary" to="/student">
         Back to workshops
       </Link>
@@ -116,12 +139,6 @@ export function WorkshopDetailPage() {
       {error ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-ink">
           {error}
-        </p>
-      ) : null}
-
-      {notice ? (
-        <p className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-ink">
-          {notice}
         </p>
       ) : null}
 
@@ -213,6 +230,23 @@ export function WorkshopDetailPage() {
                     ? 'Claiming seat...'
                     : 'Claim seat'}
           </button>
+
+          {pendingPaymentRegistration ? (
+            <div className="mt-4 rounded-md border border-warning/40 bg-warning/10 p-4">
+              <p className="text-sm font-semibold text-ink">
+                Payment pending
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                Complete payment to finish this paid registration.
+              </p>
+              <Link
+                className="mt-3 inline-block rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-contrast transition hover:bg-primary/90"
+                to={`/student/payments/${pendingPaymentRegistration.id}`}
+              >
+                Complete payment
+              </Link>
+            </div>
+          ) : null}
         </article>
       ) : null}
     </div>

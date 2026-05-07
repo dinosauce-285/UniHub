@@ -34,3 +34,22 @@ export type Registration = {
     'id' | 'title' | 'speaker' | 'room' | 'startTime' | 'endTime' | 'isPaid' | 'price'
   >;
 };
+
+export type PaymentStatusResponse = {
+  canPay: boolean;
+  reason: string | null;
+};
+
+export type PaymentResult =
+  | {
+      canPay: true;
+      registrationId: string;
+      paymentStatus: PaymentStatus;
+      amount: number;
+      gatewayRef: string | null;
+      message: string;
+    }
+  | {
+      canPay: false;
+      reason: string;
+    };
