@@ -206,7 +206,7 @@ export function StudentWorkspace() {
                 latestRegistration.workshop.endTime,
               )}
             </p>
-            <p className="mt-2 text-sm text-muted">
+            <p className="mt-2 break-all text-sm text-muted">
               QR payload: {latestRegistration.qrCode}
             </p>
           </div>
@@ -343,14 +343,14 @@ export function StudentWorkspace() {
         <div className="mt-3 space-y-3">
           {registrations.map((registration) => (
             <article
-              className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-surface p-4"
+              className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-border bg-surface p-4"
               key={registration.id}
             >
-              <div>
-                <h3 className="font-semibold text-ink">
+              <div className="min-w-0 flex-1">
+                <h3 className="break-words font-semibold text-ink">
                   {registration.workshop.title}
                 </h3>
-                <p className="mt-1 text-sm text-muted">
+                <p className="mt-1 break-words text-sm text-muted">
                   {registration.status} - {registration.paymentStatus} -{' '}
                   {registration.workshop.room}
                 </p>
@@ -362,11 +362,11 @@ export function StudentWorkspace() {
                   </p>
                 ) : null}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
                 {registration.workshop.isPaid &&
                 registration.paymentStatus === 'PENDING' ? (
                   <Link
-                    className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-contrast transition hover:bg-primary/90"
+                    className="w-full rounded-md bg-primary px-3 py-2 text-center text-sm font-semibold text-primary-contrast transition hover:bg-primary/90 sm:w-auto"
                     to={`/student/payments/${registration.id}`}
                   >
                     Complete payment
@@ -374,7 +374,7 @@ export function StudentWorkspace() {
                 ) : null}
                 {registration.qrCodeImage ? (
                   <img
-                    className="h-20 w-20 rounded-md border border-border bg-surface p-1"
+                    className="h-20 w-20 shrink-0 rounded-md border border-border bg-surface p-1"
                     src={registration.qrCodeImage}
                     alt={`QR code for ${registration.workshop.title}`}
                   />
