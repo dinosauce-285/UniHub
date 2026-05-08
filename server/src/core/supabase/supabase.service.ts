@@ -8,18 +8,16 @@ export class SupabaseService {
   private readonly logger = new Logger(SupabaseService.name);
 
   constructor(private configService: ConfigService) {
-    const supabaseUrl = this.configService.get<string>('SUPABASE_URL') || '';
+    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseKey =
       this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY') ||
-      this.configService.get<string>('SUPABASE_ANON_KEY') ||
-      'mock-key';
+      this.configService.get<string>('SUPABASE_ANON_KEY');
 
-    if (supabaseUrl && supabaseKey !== 'mock-key') {
-      this.client = createClient(supabaseUrl, supabaseKey);
-    } else {
-      this.logger.warn('Supabase URL or Key is missing. Storage might not work.');
-      this.client = createClient(supabaseUrl || 'https://mock.supabase.co', supabaseKey);
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Supabase URL or Key is missing from environment variables.');
     }
+
+    this.client = createClient(supabaseUrl, supabaseKey);
   }
 
   getClient(): SupabaseClient {

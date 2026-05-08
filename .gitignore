@@ -15,3 +15,4 @@ coverage/
 server/prisma/dev.db
 server/prisma/dev.db-journal
 server/generated/
+!.env.example
