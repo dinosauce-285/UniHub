@@ -69,6 +69,85 @@ To test the AI Summary feature when uploading workshop PDFs, you need a free Gro
 - Frontend: `http://localhost:5173`
 - MailHog: `http://localhost:8025`
 
+## Run Commands
+
+### Local development
+
+```powershell
+# Start PostgreSQL, Redis, and local infrastructure
+docker compose up -d
+
+# Install backend dependencies
+cd server
+npm install
+
+# Create/update database tables
+npm run prisma:push
+
+# Seed demo users, workshops, registrations, and check-in data
+npm run seed
+
+# Start backend API at http://localhost:3000
+npm run dev
+```
+
+```powershell
+# In another terminal, start frontend dev server at http://localhost:5173
+cd client
+npm install
+npm run dev
+```
+
+With `vite-plugin-mkcert`, the dev server uses HTTPS and proxies `/api` to
+`http://localhost:3000`. For mobile camera testing on the same Wi-Fi, open the
+Network URL printed by Vite, for example:
+
+```text
+https://192.168.1.9:5173/checkin
+```
+
+If the browser warns about the local certificate, accept/trust it for local
+testing. Keep `client/.env.local` as:
+
+```env
+VITE_API_URL=/api
+```
+
+### PWA / LAN check-in testing
+
+```powershell
+# Backend must be restarted after editing server/.env
+# API will run at http://192.168.1.9:3000 for devices on the same Wi-Fi
+npm run dev:server
+```
+
+```powershell
+# Build frontend so VITE_API_URL from client/.env.local is baked into the bundle
+cd client
+npm run build
+
+# Serve the production build for PWA/service worker testing
+npx vite preview --host 0.0.0.0
+```
+
+```text
+# Open this on the laptop or a phone on the same Wi-Fi
+http://192.168.1.9:4173/checkin
+```
+
+For production preview without the Vite proxy, `client/.env.local` can contain
+the direct backend URL:
+
+```env
+VITE_API_URL=http://192.168.1.9:3000/api
+```
+
+For backend CORS, `server/.env` should include:
+
+```env
+CORS_ORIGINS=http://localhost:5173,https://localhost:5173,http://localhost:4173,http://127.0.0.1:5173,https://127.0.0.1:5173,http://127.0.0.1:4173,http://192.168.1.9:5173,https://192.168.1.9:5173,http://192.168.1.9:4173
+```
+
 ## Demo Credentials
 
 After running `npm run seed` in `server/`, all seeded users use password `Password123!`.

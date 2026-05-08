@@ -12,6 +12,9 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & {
 };
 
 const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
+const refreshUrl = baseURL.startsWith('http')
+  ? `${baseURL}/auth/refresh`
+  : `${window.location.origin}${baseURL}/auth/refresh`;
 
 export const api = axios.create({
   baseURL,
@@ -30,7 +33,7 @@ async function refreshSession() {
 
   refreshPromise ??= axios
     .post<AuthResponse>(
-      `${baseURL}/auth/refresh`,
+      refreshUrl,
       { refreshToken },
       {
         headers: {

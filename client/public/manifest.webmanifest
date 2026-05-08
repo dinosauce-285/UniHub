@@ -1,0 +1,20 @@
+{
+  "name": "UniHub Check-in",
+  "short_name": "UniHub",
+  "description": "Offline-capable door check-in for UniHub Workshop staff.",
+  "start_url": "/checkin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#d97706",
+  "orientation": "portrait",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/unihub-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
