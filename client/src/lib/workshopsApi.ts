@@ -2,7 +2,9 @@ import { api } from './api';
 import type { Workshop, WorkshopStatus } from '../types/registration';
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
-const apiOrigin = new URL(apiBaseUrl).origin;
+const apiOrigin = apiBaseUrl.startsWith('http')
+  ? new URL(apiBaseUrl).origin
+  : window.location.origin;
 
 export type AiSummaryQueueResponse = {
   queued: boolean;

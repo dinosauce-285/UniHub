@@ -8,8 +8,9 @@ import { StudentsPage } from './pages/organizer/StudentsPage';
 import { StudentSyncPage } from './pages/organizer/StudentSyncPage';
 import { WorkshopsPage } from './pages/organizer/WorkshopsPage';
 import { OrganizerWorkshopFormPage } from './pages/organizer/OrganizerWorkshopFormPage';
+import { CheckinPage } from './pages/checkin/CheckinPage';
 import { ProtectedRoute, roleHome } from './components/ProtectedRoute';
-import { RoleWorkspacePlaceholder, WorkspaceLayout } from './layouts/WorkspaceLayout';
+import { WorkspaceLayout } from './layouts/WorkspaceLayout';
 
 export default function App() {
   const { user } = useAuthStore();
@@ -106,7 +107,7 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['CHECKIN_STAFF']}>
             <WorkspaceLayout role="CHECKIN_STAFF">
-              <RoleWorkspacePlaceholder role="CHECKIN_STAFF" />
+              <CheckinPage />
             </WorkspaceLayout>
           </ProtectedRoute>
         }
