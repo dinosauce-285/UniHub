@@ -1,7 +1,10 @@
 import {
   BadRequestException,
   Controller,
+  Get,
+  Param,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseGuards,
@@ -13,6 +16,7 @@ import { Role } from '../../../generated/prisma/enums';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { ListStudentsQueryDto } from './dto/list-students-query.dto';
 import { StudentsService } from './students.service';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -20,6 +24,20 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 @Controller('students')
 export class StudentsController {
   constructor(private readonly studentsService: StudentsService) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ORGANIZER)
+  listStudents(@Query() query: ListStudentsQueryDto) {
+    return this.studentsService.listStudents(query);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ORGANIZER)
+  getStudent(@Param('id') id: string) {
+    return this.studentsService.getStudent(id);
+  }
 
   @Post('import')
   @UseGuards(JwtAuthGuard, RolesGuard)

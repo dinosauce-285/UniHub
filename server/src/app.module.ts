@@ -16,6 +16,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { StudentSyncModule } from './modules/student-sync/student-sync.module';
 import { AiSummaryModule } from './modules/ai-summary/ai-summary.module';
 import { StudentsModule } from './modules/students/students.module';
+import { StatsModule } from './modules/stats/stats.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { StudentsModule } from './modules/students/students.module';
     StudentSyncModule,
     AiSummaryModule,
     StudentsModule,
+    StatsModule,
   ],
   controllers: [AppController],
 })
