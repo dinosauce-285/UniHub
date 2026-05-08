@@ -4,7 +4,9 @@ import { LoginPage } from './pages/auth/LoginPage';
 import { StudentWorkspace } from './pages/student/StudentWorkspace';
 import { WorkshopDetailPage } from './pages/student/WorkshopDetailPage';
 import { PaymentPage } from './pages/student/PaymentPage';
+import { DashboardPage } from './pages/organizer/DashboardPage';
 import { StudentsPage } from './pages/organizer/StudentsPage';
+import { StudentImportPage } from './pages/organizer/StudentImportPage';
 import { StudentSyncPage } from './pages/organizer/StudentSyncPage';
 import { WorkshopsPage } from './pages/organizer/WorkshopsPage';
 import { OrganizerWorkshopFormPage } from './pages/organizer/OrganizerWorkshopFormPage';
@@ -57,7 +59,27 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={['ORGANIZER']}>
             <WorkspaceLayout role="ORGANIZER">
+              <DashboardPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organizer/students"
+        element={
+          <ProtectedRoute allowedRoles={['ORGANIZER']}>
+            <WorkspaceLayout role="ORGANIZER">
               <StudentsPage />
+            </WorkspaceLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organizer/students/import"
+        element={
+          <ProtectedRoute allowedRoles={['ORGANIZER']}>
+            <WorkspaceLayout role="ORGANIZER">
+              <StudentImportPage />
             </WorkspaceLayout>
           </ProtectedRoute>
         }

@@ -21,15 +21,24 @@ export function WorkspaceLayout({
   return (
     <main className="app-shell min-h-screen">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4">
+        <div className="mx-auto flex max-w-5xl flex-col items-stretch gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between md:gap-4">
           <Link className="text-lg font-semibold text-ink" to={roleHome(role)}>
             UniHub
           </Link>
-          <div className="flex items-center gap-6">
+          <div className="flex w-full flex-col items-stretch gap-3 md:w-auto md:flex-row md:items-center md:gap-6">
             {role === 'ORGANIZER' && (
-              <nav className="flex gap-4 text-sm font-medium">
+              <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium">
                 <Link className="text-muted hover:text-ink" to="/organizer">
-                  Students (CSV)
+                  Dashboard
+                </Link>
+                <Link className="text-muted hover:text-ink" to="/organizer/students">
+                  Students
+                </Link>
+                <Link
+                  className="text-muted hover:text-ink"
+                  to="/organizer/students/import"
+                >
+                  Student import
                 </Link>
                 <Link className="text-muted hover:text-ink" to="/organizer/workshops">
                   Workshops
@@ -39,8 +48,8 @@ export function WorkspaceLayout({
                 </Link>
               </nav>
             )}
-            <div className="flex items-center gap-3 border-l border-border pl-6">
-              <span className="rounded-md bg-surface-muted px-3 py-1 text-sm text-muted">
+            <div className="flex flex-wrap items-center gap-3 border-border md:border-l md:pl-6">
+              <span className="min-w-0 break-words rounded-md bg-surface-muted px-3 py-1 text-sm text-muted">
                 {user?.name} - {roleLabels[role]}
               </span>
               <button
