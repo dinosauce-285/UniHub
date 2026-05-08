@@ -1,7 +1,12 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { parse } from 'csv-parse/sync';
 import { Role } from '../../../generated/prisma/enums';
+import type { Prisma } from '../../../generated/prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 
 type StudentCsvRow = Record<string, string | undefined>;
@@ -14,10 +19,93 @@ export type StudentImportResult = {
 
 const MAX_ROWS = 1000;
 const BCRYPT_COST = 10;
+const safeStudentSelect = {
+  id: true,
+  email: true,
+  name: true,
+  studentId: true,
+  role: true,
+  createdAt: true,
+} as const;
+
+export type StudentListQuery = {
+  page: number;
+  limit: number;
+  search?: string;
+};
 
 @Injectable()
 export class StudentsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async listStudents(query: StudentListQuery) {
+    const where: Prisma.UserWhereInput = {
+      role: Role.STUDENT,
+      ...(query.search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                email: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                studentId: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        select: safeStudentSelect,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      items,
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit) || 1,
+      },
+    };
+  }
+
+  async getStudent(id: string) {
+    const student = await this.prisma.user.findFirst({
+      where: {
+        id,
+        role: Role.STUDENT,
+      },
+      select: safeStudentSelect,
+    });
+
+    if (!student) {
+      throw new NotFoundException('Student not found');
+    }
+
+    return student;
+  }
 
   async importCsv(buffer: Buffer): Promise<StudentImportResult> {
     const rows = this.parseRows(buffer);
