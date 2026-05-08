@@ -28,7 +28,7 @@ export function Toast({
         className={`flex items-start justify-between gap-4 rounded-md border px-4 py-3 text-sm shadow-card ${toastStyles[toast.variant]}`}
         role="status"
       >
-        <p className="leading-5">{toast.message}</p>
+        <p className="min-w-0 break-words leading-5">{toast.message}</p>
         <button
           className="shrink-0 rounded border border-current/30 px-2 py-0.5 text-xs font-semibold hover:bg-surface/20"
           type="button"
