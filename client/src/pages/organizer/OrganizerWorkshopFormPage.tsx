@@ -336,6 +336,15 @@ export function OrganizerWorkshopFormPage() {
             />
           </label>
 
+          {initialWorkshop?.aiSummary ? (
+            <div className="rounded-md bg-surface-muted p-4">
+              <h2 className="text-sm font-semibold text-ink">AI Summary</h2>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted">
+                {initialWorkshop.aiSummary}
+              </p>
+            </div>
+          ) : null}
+
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Link
               className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2.5 text-sm font-semibold text-ink hover:bg-surface-muted"
