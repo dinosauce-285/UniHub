@@ -6,6 +6,7 @@ import { HealthModule } from './modules/health/health.module';
 import { PrismaModule } from './core/prisma/prisma.module';
 import { RedisModule } from './core/redis/redis.module';
 import { RateLimitingModule } from './core/rate-limiting/rate-limiting.module';
+import { SupabaseModule } from './core/supabase/supabase.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { WorkshopModule } from './modules/workshop/workshop.module';
 import { RegistrationModule } from './modules/registration/registration.module';
@@ -23,6 +24,7 @@ import { StudentsModule } from './modules/students/students.module';
     PrismaModule,
     RedisModule,
     RateLimitingModule,
+    SupabaseModule,
     HealthModule,
     AuthModule,
     WorkshopModule,
