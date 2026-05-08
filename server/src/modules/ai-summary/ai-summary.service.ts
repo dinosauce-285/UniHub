@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job, Queue, Worker } from 'bullmq';
 import { PDFParse } from 'pdf-parse';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { SupabaseService } from '../../core/supabase/supabase.service';
 
 type AiSummaryJob = {
   workshopId: string;
@@ -40,11 +39,15 @@ export class AiSummaryService implements OnModuleDestroy {
     },
   );
 
+  private readonly logger = new Logger(AiSummaryService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly supabaseService: SupabaseService,
   ) {
-    this.worker.on('failed', (job) => {
+    this.worker.on('failed', (job, err) => {
+      this.logger.error(`Job ${job?.id} failed: ${err.message}`);
       if (this.isFinalAttempt(job)) {
         void this.cleanupTempFile(job?.data.filePath);
       }
@@ -94,7 +97,16 @@ export class AiSummaryService implements OnModuleDestroy {
   }
 
   private async processSummaryJob(job: Job<AiSummaryJob>) {
-    const pdfBuffer = await readFile(job.data.filePath);
+    const { data: fileData, error } = await this.supabaseService
+      .getClient()
+      .storage.from('unihub-uploads')
+      .download(job.data.filePath);
+
+    if (error || !fileData) {
+      throw new Error(`Failed to download PDF from Supabase: ${error?.message}`);
+    }
+
+    const pdfBuffer = Buffer.from(await fileData.arrayBuffer());
     const rawText = await this.extractPdfText(pdfBuffer);
     const cleanedText = this.cleanText(rawText);
 
@@ -186,15 +198,20 @@ export class AiSummaryService implements OnModuleDestroy {
   }
 
   private async saveTempPdf(file: Express.Multer.File) {
-    const directory = join(process.cwd(), 'tmp', 'ai-summary');
-    await mkdir(directory, { recursive: true });
+    const filename = `ai-summary/tmp-${randomUUID()}.pdf`;
+    const { error } = await this.supabaseService
+      .getClient()
+      .storage.from('unihub-uploads')
+      .upload(filename, file.buffer, {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
 
-    const filename = `${randomUUID()}.pdf`;
-    const filePath = join(directory, filename);
+    if (error) {
+      throw new Error(`Failed to upload to Supabase: ${error.message}`);
+    }
 
-    await writeFile(filePath, file.buffer);
-
-    return filePath;
+    return filename;
   }
 
   private getGroqModel() {
@@ -228,7 +245,7 @@ export class AiSummaryService implements OnModuleDestroy {
     }
 
     try {
-      await unlink(filePath);
+      await this.supabaseService.getClient().storage.from('unihub-uploads').remove([filePath]);
     } catch {
       // The temp file may already be removed after a successful retry.
     }

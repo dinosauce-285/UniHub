@@ -1,5 +1,3 @@
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -34,13 +32,7 @@ function isPrivateNetworkOrigin(origin: string) {
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  const uploadRoot = join(process.cwd(), 'uploads');
   const allowedOrigins = getAllowedOrigins();
-
-  mkdirSync(join(uploadRoot, 'room-maps'), { recursive: true });
-  app.useStaticAssets(uploadRoot, {
-    prefix: '/api/uploads/',
-  });
 
   app.enableCors({
     origin: (origin, callback) => {

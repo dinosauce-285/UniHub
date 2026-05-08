@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname } from 'node:path';
 import {
   BadRequestException,
   Injectable,
@@ -12,6 +11,7 @@ import {
 } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { RedisService } from '../../core/redis/redis.service';
+import { SupabaseService } from '../../core/supabase/supabase.service';
 import { CreateWorkshopDto } from './dto/create-workshop.dto';
 import { UpdateWorkshopDto } from './dto/update-workshop.dto';
 
@@ -33,8 +33,6 @@ const workshopSelect = {
   createdAt: true,
 } as const;
 
-const ROOM_MAP_UPLOAD_DIR = join(process.cwd(), 'uploads', 'room-maps');
-const ROOM_MAP_PUBLIC_PREFIX = '/api/uploads/room-maps';
 const MAX_ROOM_MAP_SIZE_BYTES = 5 * 1024 * 1024;
 
 type WorkshopRecord = {
@@ -47,6 +45,7 @@ export class WorkshopService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redisService: RedisService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   async list() {
@@ -197,12 +196,25 @@ export class WorkshopService {
     await this.findForMutation(id);
     const fileInfo = this.validateRoomMapFile(file);
 
-    await mkdir(ROOM_MAP_UPLOAD_DIR, { recursive: true });
-    const filename = `${id}-${randomUUID()}${fileInfo.extension}`;
-    const targetPath = join(ROOM_MAP_UPLOAD_DIR, filename);
-    await writeFile(targetPath, fileInfo.buffer);
+    const filename = `room-maps/${id}-${randomUUID()}${fileInfo.extension}`;
+    const { data: uploadData, error } = await this.supabaseService
+      .getClient()
+      .storage.from('unihub-uploads')
+      .upload(filename, fileInfo.buffer, {
+        contentType: fileInfo.mimetype,
+        upsert: true,
+      });
 
-    const roomMapUrl = `${ROOM_MAP_PUBLIC_PREFIX}/${filename}`;
+    if (error) {
+      throw new BadRequestException(`Failed to upload to Supabase: ${error.message}`);
+    }
+
+    const { data: publicUrlData } = this.supabaseService
+      .getClient()
+      .storage.from('unihub-uploads')
+      .getPublicUrl(filename);
+
+    const roomMapUrl = publicUrlData.publicUrl;
     const workshop = await this.prisma.workshop.update({
       where: { id },
       data: { roomMapUrl },
@@ -299,10 +311,7 @@ export class WorkshopService {
       return null;
     }
 
-    if (
-      trimmed.startsWith(`${ROOM_MAP_PUBLIC_PREFIX}/`) ||
-      /^https?:\/\/\S+$/i.test(trimmed)
-    ) {
+    if (/^https?:\/\/\S+$/i.test(trimmed)) {
       return trimmed;
     }
 
@@ -339,7 +348,7 @@ export class WorkshopService {
       throw new BadRequestException('Room map file content is invalid');
     }
 
-    return { buffer: file.buffer, extension };
+    return { buffer: file.buffer, extension, mimetype: file.mimetype };
   }
 
   private hasExpectedSignature(buffer: Buffer, extension: string) {
