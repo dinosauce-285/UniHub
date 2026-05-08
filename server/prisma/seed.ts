@@ -112,6 +112,7 @@ async function seedUsers() {
 
 async function resetDatabase() {
   await prisma.checkinLog.deleteMany();
+  await prisma.paymentAttempt.deleteMany();
   await prisma.registration.deleteMany();
   await prisma.refreshToken.deleteMany();
   await prisma.studentSyncLog.deleteMany();
@@ -127,7 +128,7 @@ async function seedWorkshops() {
       description: 'Architecture, queues, and graceful degradation.',
       speaker: 'UniHub Team',
       room: 'A101',
-      roomMapUrl: 'https://maps.unihub.local/a101',
+      roomMapUrl: 'https://nxyytbzchjvahtycisny.supabase.co/storage/v1/object/sign/resource/room_map.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9mMzYyMTFiMC1iMGExLTQ5MzYtYmNjZC1jNTMxOWE0ZTlhMmYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJyZXNvdXJjZS9yb29tX21hcC5qcGciLCJpYXQiOjE3NzgyMjQ4NTUsImV4cCI6MTgwOTc2MDg1NX0.Ge_zopxEGDFc9l69Ccpxr_hdn4pXYRPJpL_-oydtdI4',
       totalSlots: 150,
       slotLeft: 147,
       status: WorkshopStatus.OPEN,
@@ -144,7 +145,7 @@ async function seedWorkshops() {
       description: 'IndexedDB and sync strategies for event operations.',
       speaker: 'Platform Ops',
       room: 'B204',
-      roomMapUrl: 'https://maps.unihub.local/b204',
+      roomMapUrl: 'https://nxyytbzchjvahtycisny.supabase.co/storage/v1/object/sign/resource/room_map.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9mMzYyMTFiMC1iMGExLTQ5MzYtYmNjZC1jNTMxOWE0ZTlhMmYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJyZXNvdXJjZS9yb29tX21hcC5qcGciLCJpYXQiOjE3NzgyMjQ4NTUsImV4cCI6MTgwOTc2MDg1NX0.Ge_zopxEGDFc9l69Ccpxr_hdn4pXYRPJpL_-oydtdI4',
       totalSlots: 80,
       slotLeft: 78,
       status: WorkshopStatus.OPEN,
@@ -161,7 +162,7 @@ async function seedWorkshops() {
       description: 'Using AI to summarize, route, and support student requests.',
       speaker: 'Student Success Lab',
       room: 'C302',
-      roomMapUrl: 'https://maps.unihub.local/c302',
+      roomMapUrl: 'https://nxyytbzchjvahtycisny.supabase.co/storage/v1/object/sign/resource/room_map.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9mMzYyMTFiMC1iMGExLTQ5MzYtYmNjZC1jNTMxOWE0ZTlhMmYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJyZXNvdXJjZS9yb29tX21hcC5qcGciLCJpYXQiOjE3NzgyMjQ4NTUsImV4cCI6MTgwOTc2MDg1NX0.Ge_zopxEGDFc9l69Ccpxr_hdn4pXYRPJpL_-oydtdI4',
       totalSlots: 60,
       slotLeft: 59,
       status: WorkshopStatus.DRAFT,
