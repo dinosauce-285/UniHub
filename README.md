@@ -1,157 +1,313 @@
-# UniHub Workshop Platform 🎓✨
+# UniHub Workshop Platform
 
-**UniHub** is a high-performance, resilient event management platform built to handle the massive scale of University "Career and Skill Weeks". 
+UniHub is a university workshop and event management platform for replacing manual Google Form, spreadsheet, and email workflows. It supports workshop publishing, student registration, QR confirmation, door check-in, organizer operations, and scalable seat claiming for high-contention registration windows.
 
-When 12,000+ students rush to register for limited workshop slots simultaneously, traditional solutions like Google Forms crash, overbook seats, and require slow manual processing. UniHub was engineered from the ground up to solve these specific system design challenges.
+The project is built as a course-ready modular monolith: a React/Vite frontend, a NestJS backend, PostgreSQL for canonical data, Redis for coordination, BullMQ for async jobs, Supabase Storage for uploaded files, Groq for PDF summaries, MailHog for local email testing, and a mock payment gateway for payment-resilience demos.
 
-## 🌟 Core Features & Technical Architecture
+For full architecture diagrams and ADRs, see [blueprint/design.md](blueprint/design.md).
 
-The platform utilizes a **Modular Monolith** architecture (NestJS, React, PostgreSQL, Redis) combined with advanced system design patterns to address real-world bottlenecks:
+## Key Features
 
-### 1. 🚀 Massive Concurrency & Slot Contention
-- **The Problem:** Thousands of clicks per second. If two students click "Register" at the exact same millisecond for the last available seat, naive database queries will allow both, leading to overbooking.
-- **The Architecture:** 
-  - **Token Bucket Rate Limiting (Redis):** Throttles API requests (e.g., max 5 requests/30s per user) to protect the backend.
-  - **Atomic Slot Claiming:** Instead of relying on slow database row-locks, UniHub uses Redis `DECR` operations on the workshop's slot key. This provides atomic, extremely fast concurrency control. If the value drops below 0, it safely compensates (`INCR`) and returns an HTTP 409. Canonical records and unique constraints are then safely persisted to PostgreSQL.
+### Student
 
-### 2. 🛡️ Payment Gateway Instability & Double Charges
-- **The Problem:** External payment gateways often timeout or fail under heavy load. A hung payment request shouldn't crash the entire university registration system or charge a student twice on retry.
-- **The Architecture:**
-  - **Circuit Breaker Pattern (`opossum`):** Monitors payment API health. If errors exceed the threshold, the breaker "Opens", instantly failing fast (HTTP 503) instead of waiting for timeouts. This ensures **Graceful Degradation**: paid registrations pause, but free registrations and viewing schedules continue to work flawlessly.
-  - **Idempotency Keys:** Every registration generates a UUIDv4 `Idempotency-Key` (cached in Redis for 24h and persisted in PostgreSQL). If a student retries after a network timeout, the system guarantees they will never be registered or charged twice.
+- Login with seeded or imported student account.
+- Browse open workshops and view workshop details.
+- Register for workshops with QR confirmation.
+- View "My workshops" and QR code image.
+- Complete mock payment for paid workshop registrations.
 
-### 3. 📱 Offline-First Door Check-in
-- **The Problem:** Event venues frequently suffer from dead zones or dropped WiFi. Checking in students using paper lists is chaotic, but a cloud-only app will freeze if the internet drops.
-- **The Architecture:** 
-  - **PWA with IndexedDB:** A specialized Progressive Web App surface for event staff. When online, QR scans validate instantly via `POST /checkin/validate`. When offline, check-ins are intercepted and stored in the browser's `IndexedDB`.
-  - **Idempotent Batch Sync:** Once the device reconnects to the network, the PWA automatically pushes the queue to `POST /checkin/sync`. The backend handles these batch syncs idempotently, guaranteeing no duplicate logs even if the sync is interrupted midway.
+### Organizer
 
-### 4. 🤖 Asynchronous Processing (AI Summaries & Emails)
-- **The Problem:** Processing large PDF workshop documents via external AI APIs (Anthropic/Groq) or sending thousands of confirmation emails synchronously will block HTTP threads and slow down the API.
-- **The Architecture:**
-  - **Redis-backed BullMQ Workers:** The NestJS API acts only as a producer, instantly returning a 202 Accepted response. Separate worker processes consume the queue.
-  - **Pipe-and-Filter Pattern:** The AI Summary pipeline is broken into independent, retryable steps (Extract Text -> Clean -> Call AI -> Save to PostgreSQL), maximizing reliability.
+- Dashboard and overview statistics.
+- Create, update, and manage workshop status.
+- Configure free/paid workshops, capacity, schedule, speaker, room, and description.
+- Upload room maps to Supabase Storage.
+- Generate AI workshop summaries from PDF through Groq.
+- List/search students and import students from CSV.
+- Trigger and inspect legacy student sync logs.
 
-## Blueprint Documentation 🏛️
+### Check-in Staff
 
-The `blueprint/` directory serves as the centralized source of truth for the project's technical architecture, product requirements, and feature specifications:
-- **`proposal.md`**: The high-level product vision, defining the problem, goals, scope, and user roles.
-- **`design.md`**: The technical design document detailing the Monolith architecture, database schema, System C4 diagrams, and Architectural Decision Records (ADRs).
-- **`specs/`**: Contains detailed functional specifications for individual features (e.g., `checkin`, `registration`, `student-sync`). All new feature implementations must align with these specs.
+- Scan or manually enter QR payloads.
+- Validate eligible registrations.
+- Record check-in logs.
+- Store check-ins in IndexedDB while offline and batch-sync them when the browser comes back online.
 
-## Quick start
+### System-Level
 
-1. Copy `.env.example` to `.env`.
-2. Start infrastructure:
-   `docker compose up -d`
-3. Install dependencies:
-   `cd server && npm install`
-   `cd ../client && npm install`
-4. Create database schema:
-   `cd ../server && npm run prisma:push`
-5. Seed sample data:
-   `npm run seed`
-6. Run apps:
-   `npm run start:dev`
-   `cd ../client && npm run dev`
+- JWT authentication with refresh token rotation.
+- Role-based access control for `STUDENT`, `ORGANIZER`, and `CHECKIN_STAFF`.
+- Redis-backed rate limiting and atomic slot counters.
+- Idempotency keys for registration and payment writes.
+- BullMQ queues for notification and student sync jobs.
+- Mock payment gateway with `opossum` circuit breaker.
+- PostgreSQL + Prisma schema with unique constraints for duplicate protection.
+- MailHog/Nodemailer email delivery for local development.
 
-## AI Configuration (Groq)
+## Architecture Summary
 
-To test the AI Summary feature when uploading workshop PDFs, you need a free Groq API key:
+UniHub uses a **NestJS modular monolith**. Business capabilities are split into modules such as Auth, Workshop, Registration, Payment, Check-in, Notification, Student Sync, Students, AI Summary, and Stats.
 
-1. Visit [console.groq.com/keys](https://console.groq.com/keys) to sign up and generate an API key.
-2. Open your `.env` (and `server/.env`) file and set the key:
-   `GROQ_API_KEY=your_key_here`
+High-level components:
 
-## Useful URLs
+| Component | Responsibility |
+|---|---|
+| React + Vite frontend | Student, organizer, and check-in staff UI. |
+| NestJS backend | REST API, validation, RBAC, business workflows. |
+| PostgreSQL | Canonical relational data for users, workshops, registrations, payments, check-ins, and sync logs. |
+| Redis | Slot counters, idempotency cache, rate limits, and BullMQ queue storage. |
+| BullMQ | Async notification and student sync jobs; AI summary queue in backend. |
+| Supabase Storage | Room map uploads and temporary AI-summary PDFs. |
+| Mock payment gateway | Demo payment provider wrapped by a circuit breaker. |
+| Groq AI API | Workshop PDF summary generation. |
+| MailHog | Local SMTP capture and email preview. |
 
-- API: `http://localhost:3000`
-- Frontend: `http://localhost:5173`
-- MailHog: `http://localhost:8025`
+Important implementation note: BullMQ workers currently run inside the NestJS application process. The architecture can be split into separate worker processes later, but there is no separate worker script in the current package scripts.
 
-## Run Commands
+## Tech Stack
 
-### Local development
+### Backend
 
-```powershell
-# Start PostgreSQL, Redis, and local infrastructure
-docker compose up -d
+- NestJS
+- TypeScript
+- Prisma 7 with PostgreSQL
+- Redis with ioredis
+- BullMQ
+- JWT + Passport
+- NestJS Throttler
+- Supabase Storage SDK
+- Groq AI API via `fetch`
+- Nodemailer + MailHog
+- `opossum` circuit breaker
 
-# Install backend dependencies
-cd server
-npm install
+### Frontend
 
-# Create/update database tables
-npm run prisma:push
+- React 19
+- Vite
+- TypeScript
+- React Router
+- Zustand
+- Axios
+- Tailwind CSS
+- ZXing browser QR scanner
+- PWA service worker and IndexedDB for check-in queue
 
-# Seed demo users, workshops, registrations, and check-in data
-npm run seed
+### Infrastructure
 
-# Start backend API at http://localhost:3000
-npm run dev
-```
+- Docker Compose
+- PostgreSQL 16
+- Redis 7
+- MailHog
 
-```powershell
-# In another terminal, start frontend dev server at http://localhost:5173
-cd client
-npm install
-npm run dev
-```
-
-With `vite-plugin-mkcert`, the dev server uses HTTPS and proxies `/api` to
-`http://localhost:3000`. For mobile camera testing on the same Wi-Fi, open the
-Network URL printed by Vite, for example:
+## Repository Structure
 
 ```text
-https://192.168.1.9:5173/checkin
+.
+|-- blueprint/              # Proposal, architecture design, demo notes
+|-- client/                 # React/Vite frontend
+|-- data/                   # Sample and legacy CSV files
+|-- openspec/               # Change/spec history
+|-- scripts/                # Utility/demo scripts
+|-- server/                 # NestJS backend and Prisma schema
+|-- docker-compose.yml      # PostgreSQL, Redis, MailHog
+|-- package.json            # Root convenience scripts
+`-- README.md
 ```
 
-If the browser warns about the local certificate, accept/trust it for local
-testing. Keep `client/.env.local` as:
+## Local Development Setup
+
+### Prerequisites
+
+- Node.js 22 recommended
+- npm
+- Docker Desktop or compatible Docker Compose runtime
+- Supabase project credentials for backend startup
+- Groq API key for AI summary features
+
+### 1. Install Dependencies
+
+```powershell
+npm install
+cd server
+npm install
+cd ../client
+npm install
+cd ..
+```
+
+### 2. Start Local Infrastructure
+
+```powershell
+docker compose up -d
+```
+
+This starts:
+
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+- MailHog SMTP: `localhost:1025`
+- MailHog UI: `http://localhost:8025`
+
+### 3. Configure Environment Files
+
+Create `server/.env` from `server/.env.example` and fill in required values:
+
+```powershell
+Copy-Item server\.env.example server\.env
+```
+
+Create or keep `client/.env.local`:
 
 ```env
 VITE_API_URL=/api
 ```
 
-### PWA / LAN check-in testing
+The Vite dev server proxies `/api` to `http://localhost:3000`.
+
+### 4. Prepare the Database
 
 ```powershell
-# Backend must be restarted after editing server/.env
-# API will run at http://192.168.1.9:3000 for devices on the same Wi-Fi
-npm run dev:server
+cd server
+npm run prisma:generate
+npm run prisma:push
+npm run seed
+cd ..
 ```
 
+Seeded demo users all use password `Password123!`.
+
+| Role | Email |
+|---|---|
+| Student | `student1@unihub.local` |
+| Organizer | `organizer1@unihub.local` |
+| Check-in staff | `checkin1@unihub.local` |
+
+### 5. Run the App
+
+Run both backend and frontend from the repository root:
+
 ```powershell
-# Build frontend so VITE_API_URL from client/.env.local is baked into the bundle
+npm run dev
+```
+
+Or run them separately:
+
+```powershell
+npm run dev:server
+npm run dev:client
+```
+
+Useful URLs:
+
+- Frontend: `https://localhost:5173`
+- Backend API root: `http://localhost:3000`
+- Backend API prefix: `http://localhost:3000/api`
+- Health check: `http://localhost:3000/api/health`
+- MailHog UI: `http://localhost:8025`
+
+For mobile check-in testing on the same Wi-Fi, use the Network URL printed by Vite, for example `https://192.168.1.x:5173/checkin`. If using production preview, run:
+
+```powershell
 cd client
 npm run build
-
-# Serve the production build for PWA/service worker testing
 npx vite preview --host 0.0.0.0
 ```
 
-```text
-# Open this on the laptop or a phone on the same Wi-Fi
-http://192.168.1.9:4173/checkin
+## Environment Variables
+
+Backend variables are documented in [server/.env.example](server/.env.example). Required or used names:
+
+| Variable | Purpose |
+|---|---|
+| `PORT` | Backend port, defaults to `3000`. |
+| `CORS_ORIGINS` | Allowed frontend origins; `*` is supported for local development. |
+| `DATABASE_URL` | PostgreSQL connection string. |
+| `REDIS_URL` | Redis connection string. |
+| `JWT_SECRET` | JWT signing secret. Must be set. |
+| `JWT_EXPIRES_IN` | Access token lifetime. |
+| `REFRESH_TOKEN_EXPIRES_DAYS` | Refresh token lifetime in days. |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM` | SMTP settings, defaulting to MailHog locally. |
+| `NOTIFICATION_EMAIL_ENABLED` | Set to `false` to disable email sends. |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Groq AI summary integration. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase Storage integration. Required by current backend startup. |
+| `LEGACY_CSV_PATH` | Optional path for scheduled/manual student sync. |
+| `MOCK_PAYMENT_FAILURE_RATE` | Optional mock gateway failure rate from `0` to `1`. |
+| `RATE_LIMIT_GLOBAL_LIMIT`, `RATE_LIMIT_GLOBAL_TTL_MS` | Optional global rate-limit overrides. |
+| `STUDENT_IMPORT_TEMP_PASSWORD` | Optional temporary password for imported students. |
+
+Frontend variables:
+
+| Variable | Purpose |
+|---|---|
+| `VITE_API_URL` | API base URL. Use `/api` when running through Vite proxy. |
+
+Do not commit real Supabase, Groq, JWT, or database secrets.
+
+## API Overview
+
+The backend sets a global `/api` prefix.
+
+| Group | Main endpoints |
+|---|---|
+| Auth | `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout` |
+| Workshops | `GET /api/workshops`, `GET /api/workshops/:id`, organizer create/update/status/room-map routes |
+| Registrations | `GET /api/registrations/me`, `POST /api/registrations` |
+| Payment | `GET /api/payment/status`, `POST /api/payment/registrations/:registrationId/pay` |
+| Check-in | `POST /api/checkin/validate`, `POST /api/checkin/sync` |
+| Students | `GET /api/students`, `GET /api/students/:id`, `POST /api/students/import` |
+| Student sync | `GET /api/student-sync`, `POST /api/student-sync/trigger` |
+| AI summary | `POST /api/workshops/:workshopId/ai-summary`, `POST /api/ai-summary/preview` |
+| Stats | `GET /api/stats/overview` |
+| Health | `GET /api/health` |
+
+Registration and payment write endpoints require an `Idempotency-Key` header.
+
+## Implementation Status
+
+| Feature | Status | Notes |
+|---|---|---|
+| Auth + RBAC | Implemented | JWT access token, refresh token records, backend guards, frontend protected routes. |
+| Workshop management | Implemented | CRUD/status and Supabase room-map upload. |
+| Registration slot control | Implemented | Redis `DECR`/`INCR` with PostgreSQL unique constraints. |
+| Registration idempotency | Implemented | Redis 24-hour response cache plus database unique key. |
+| Payment | Mock/demo implementation | Mock gateway with `PaymentAttempt` persistence and idempotency. No real payment provider. |
+| Payment circuit breaker | Implemented | In-memory `opossum` breaker; state is not shared across API instances. |
+| Notifications | Implemented | BullMQ, MailHog email, and in-app log strategy. |
+| Check-in | Implemented | Online QR validation and IndexedDB offline queue with batch sync. Offline scans are validated when synced. |
+| Student CSV import | Implemented | Organizer upload path creates new students and reports row errors. |
+| Legacy student sync | Implemented | Manual/cron BullMQ worker reads CSV and writes `StudentSyncLog`. |
+| AI summary preview | Implemented | Frontend form uses synchronous preview endpoint. |
+| AI summary async queue | Backend implemented | Endpoint and worker exist; current organizer form primarily uses preview flow. |
+| Separate worker deployment | Partial | Workers are architecturally separable but currently run in the NestJS process. |
+| Production readiness | Out of scope | Local/demo infrastructure only; no CI/CD or production monitoring. |
+
+## Documentation
+
+- [Project proposal](blueprint/proposal.md)
+- [Architecture design, C4 diagrams, database schema, flows, ADRs](blueprint/design.md)
+- [Demo script notes](blueprint/demo.md)
+- [Original assignment text](blueprint/test.txt)
+
+## Useful Commands
+
+```powershell
+# Root
+npm run dev
+npm run build
+npm run seed
+
+# Backend
+cd server
+npm run dev
+npm run build
+npm run lint
+npm run prisma:generate
+npm run prisma:push
+npm run seed
+
+# Frontend
+cd client
+npm run dev
+npm run build
+npm run preview
 ```
-
-For production preview without the Vite proxy, `client/.env.local` can contain
-the direct backend URL:
-
-```env
-VITE_API_URL=http://192.168.1.9:3000/api
-```
-
-For backend CORS, `server/.env` should include:
-
-```env
-CORS_ORIGINS=http://localhost:5173,https://localhost:5173,http://localhost:4173,http://127.0.0.1:5173,https://127.0.0.1:5173,http://127.0.0.1:4173,http://192.168.1.9:5173,https://192.168.1.9:5173,http://192.168.1.9:4173
-```
-
-## Demo Credentials
-
-After running `npm run seed` in `server/`, all seeded users use password `Password123!`.
-
-- Student: `student1@unihub.local`
-- Organizer: `organizer1@unihub.local`
-- Check-in staff: `checkin1@unihub.local`

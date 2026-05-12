@@ -1,399 +1,783 @@
-# UniHub Workshop - Technical Design
+# UniHub Workshop - Architecture Design
 
-## Overall Architecture
+## 1. Overview
 
-UniHub Workshop sử dụng kiến trúc **Monolith module hóa** (Modular Monolith) kết hợp với một số thành phần bổ trợ độc lập.
+UniHub is a university workshop and event management platform for three roles:
 
-**Lý do chọn Modular Monolith thay vì Microservices:**
-Hệ thống có quy mô vừa, team nhỏ (2 người), thời gian hạn chế. Microservices mang lại overhead vận hành lớn không tương xứng với lợi ích ở giai đoạn này. Tuy nhiên các module được thiết kế độc lập (Payment, Notification, CheckIn, CSV Import) để có thể tách ra sau nếu cần.
+- `STUDENT`: browse workshops, register, pay for paid workshops, receive QR codes.
+- `ORGANIZER`: manage workshops, room maps, AI summaries, student data, sync logs, and statistics.
+- `CHECKIN_STAFF`: scan QR codes and sync offline check-ins.
 
-**Các thành phần chính:**
+The implementation is a **modular monolith**:
 
-- **Web App (React + Vite):** Giao diện sinh viên và trang admin.
-- **Mobile PWA (React):** Giao diện check-in cho nhân sự, hỗ trợ offline.
-- **Backend API (NestJS):** Xử lý toàn bộ nghiệp vụ, chia module rõ ràng.
-- **PostgreSQL:** Database chính, lưu toàn bộ dữ liệu quan hệ.
-- **Redis:** Cache slot workshop, lưu idempotency key, rate limiting counter, Circuit Breaker state.
-- **Bull Queue (Redis-backed):** Xử lý bất đồng bộ — gửi email, AI summary, CSV import.
-- **Mock Payment Gateway:** Mô phỏng cổng thanh toán để test Circuit Breaker và Idempotency Key.
+- Frontend: React + Vite single-page app, with a PWA-capable check-in surface.
+- Backend: NestJS API with modules grouped by business capability.
+- Database: PostgreSQL accessed through Prisma.
+- Coordination layer: Redis for workshop slot counters, registration idempotency cache, rate limiting, and BullMQ queues.
+- Async jobs: BullMQ workers for notifications and student sync; AI summary uses a BullMQ queue/worker created by `AiSummaryService`.
+- File storage: Supabase Storage for room maps and temporary AI summary PDFs.
+- External integrations: Groq AI API, MailHog/SMTP in development, and an in-code mock payment gateway.
 
-**Giao tiếp giữa các thành phần:**
-- Web/PWA ↔ Backend API: REST over HTTP, JWT trong Authorization header.
-- Backend API ↔ PostgreSQL: Prisma ORM.
-- Backend API ↔ Redis: ioredis (cache, coordination, rate limit, CB state).
-- Backend API ↔ Bull Queue: Backend API đóng vai trò job producer; các worker process độc lập đóng vai trò consumer.
-- Bull Queue → Email Service: SMTP (Nodemailer).
-- Bull Queue → AI Model: HTTP call đến Anthropic API.
-- Cronjob → CSV file: đọc file từ thư mục được mount, import vào PostgreSQL.
+Important implementation note: the current backend runs BullMQ workers inside the NestJS app process. The design can be split into independent worker processes later, but the current codebase does not include a separate worker entrypoint or package script.
 
-## C4 Diagram
+## 2. Implementation Snapshot
 
-### Level 1 - System Context
+| Area | Current implementation |
+|---|---|
+| Authentication | `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`; JWT access token and opaque refresh token records in PostgreSQL. |
+| RBAC | `JwtAuthGuard` + `RolesGuard` protect organizer, student, and check-in endpoints. |
+| Workshop management | Organizer CRUD/status update, public listing, Redis-hydrated `slotLeft`, Supabase room-map upload. |
+| Registration | Student registration with required `Idempotency-Key`, Redis `DECR` slot claim, PostgreSQL transaction, QR payload, notification job. |
+| Payment | Mock gateway, `PaymentAttempt` table, payment idempotency through unique keys, in-memory `opossum` circuit breaker. |
+| Check-in | Online QR validation and offline batch sync; `CheckinLog.registrationId` is unique to prevent duplicate check-ins. |
+| Student data | Synchronous CSV import through `/api/students/import`; scheduled/manual legacy CSV sync through BullMQ and `StudentSyncLog`. |
+| Notifications | BullMQ queue with in-app log strategy and SMTP email strategy. MailHog is provided by Docker Compose. |
+| AI summary | Backend supports async `POST /api/workshops/:id/ai-summary`; frontend workshop form currently uses sync preview endpoint `POST /api/ai-summary/preview`. Both call Groq after PDF text extraction. |
+| Rate limiting | Global Redis-backed throttling; specific policies for registration writes and workshop reads. |
+| Infrastructure | `docker-compose.yml` starts PostgreSQL, Redis, and MailHog. Supabase and Groq are external env-configured services. |
+
+## 3. C4 Architecture
+
+### 3.1 C4 Level 1 - System Context
+
 ```mermaid
 flowchart LR
-  student[Student]
-  organizer[Organizer]
-  staff[Check-in Staff]
-  legacy[Legacy Student CSV Export]
-  ai[External AI API]
-  gateway[Mock Payment Gateway]
-  mailhog[MailHog SMTP/Web UI]
+  student["Student"]
+  organizer["Organizer"]
+  staff["Check-in Staff"]
+  legacy["Legacy Student CSV Export"]
+  payment["Mock Payment Gateway<br/>(in backend code)"]
+  groq["Groq AI API"]
+  mailhog["MailHog / SMTP dev service"]
+  storage["Supabase Storage"]
 
-  system[UniHub Workshop Platform]
+  system["UniHub Workshop Platform"]
 
-  student -->|Browse workshops, register, pay, receive QR| system
-  organizer -->|Manage workshops, upload CSV/PDF, monitor operations| system
-  staff -->|Scan QR and sync offline check-ins| system
-  legacy -->|Nightly CSV input| system
-  system -->|Payment authorization with circuit breaker| gateway
-  system -->|Email delivery in development| mailhog
-  system -->|PDF text summary requests| ai
+  student -->|"Browse, register, pay, view QR"| system
+  organizer -->|"Manage workshops, students, assets, statistics"| system
+  staff -->|"Scan QR codes, sync offline check-ins"| system
+  legacy -->|"Nightly/manual CSV file"| system
+
+  system -->|"Mock payment authorization"| payment
+  system -->|"PDF summary requests"| groq
+  system -->|"Development email delivery"| mailhog
+  system -->|"Room maps and temporary PDFs"| storage
 ```
 
+UniHub owns the business workflow: authentication, workshop publication, registration, payment state, QR check-in, student import, and operational statistics. External systems are used only for specialized capabilities: SMTP email capture, AI summarization, object storage, and simulated payment behavior.
 
-UniHub là nền tảng thống nhất cho việc xem workshop, đăng ký, thanh toán dự phòng, QR check-in và vận hành sự kiện. Người dùng truy cập qua `client/`; tích hợp và lưu trữ được điều phối bởi `server/`.
-
-### Level 2 - Container
+### 3.2 C4 Level 2 - Container Diagram
 
 ```mermaid
 flowchart TB
-  subgraph Browser["User Browser / Mobile Device"]
-    spa["client/ React + Vite SPA"]
-    pwa["Check-in PWA surface"]
-    indexeddb[(IndexedDB pending_checkins)]
-    pwa <--> indexeddb
+  subgraph Browser["Browser / Mobile Browser"]
+    spa["React + Vite SPA<br/>client/"]
+    pwa["Check-in PWA surface<br/>/checkin route"]
+    idb[("IndexedDB<br/>pending_checkins")]
+    sw["Service worker<br/>app shell cache"]
+    pwa <--> idb
+    pwa <--> sw
   end
 
-  subgraph Api["server/ NestJS API"]
-    auth["AuthModule<br/>JWT + RBAC"]
-    workshop["WorkshopModule<br/>CRUD + slot read model"]
-    registration["RegistrationModule<br/>slot claim + QR"]
-    payment["PaymentModule<br/>opossum circuit breaker"]
-    checkin["CheckinModule<br/>validate + sync"]
-    notification["NotificationModule<br/>enqueue jobs"]
-    sync["StudentSyncModule<br/>CSV import"]
-    summary["AiSummaryModule<br/>PDF summary enqueue"]
+  subgraph Api["NestJS Backend API<br/>server/"]
+    auth["AuthModule"]
+    workshop["WorkshopModule"]
+    registration["RegistrationModule"]
+    paymentModule["PaymentModule"]
+    checkin["CheckinModule"]
+    notification["NotificationModule"]
+    studentSync["StudentSyncModule"]
+    students["StudentsModule"]
+    ai["AiSummaryModule"]
+    stats["StatsModule"]
+    rate["RateLimitingModule"]
   end
 
-  subgraph Worker["server/ Worker Process"]
-    notificationWorker["Notification worker"]
-    csvWorker["Student sync worker"]
-    aiWorker["AI summary worker"]
+  subgraph Workers["BullMQ Workers<br/>currently hosted in NestJS process"]
+    notificationWorker["NotificationWorker"]
+    studentSyncWorker["StudentSyncWorker"]
+    aiWorker["AI summary Worker"]
   end
 
-  postgres[(PostgreSQL<br/>canonical data)]
-  redis[(Redis<br/>slots, rate limits,<br/>idempotency, Bull queues,<br/>breaker state)]
-  mailhog[MailHog]
-  gateway[Mock Payment Gateway]
-  ai[External AI API]
-  csv[CSV files]
+  postgres[("PostgreSQL<br/>canonical relational data")]
+  redis[("Redis<br/>slot counters, idempotency cache,<br/>rate limit buckets, BullMQ queues")]
+  supabase["Supabase Storage<br/>room maps, temporary PDFs"]
+  groq["Groq AI API"]
+  mailhog["MailHog / SMTP"]
+  csv["Legacy CSV file<br/>LEGACY_CSV_PATH or data/*.csv"]
+  gateway["MockPaymentGateway<br/>in-process simulated provider"]
 
-  spa -->|REST JSON + JWT| auth
-  spa -->|REST JSON + JWT| workshop
-  spa -->|REST JSON + JWT + Idempotency-Key| registration
-  spa -->|paid registration| payment
-  pwa -->|online validate / sync batch| checkin
+  spa -->|"REST JSON + JWT"| Api
+  pwa -->|"REST JSON + JWT"| checkin
 
-  auth --> postgres
-  workshop --> postgres
-  workshop --> redis
-  registration --> redis
-  registration --> postgres
-  registration --> notification
-  payment --> redis
-  payment --> gateway
-  payment --> postgres
-  checkin --> postgres
-  checkin --> redis
-  notification --> redis
-  sync --> redis
-  summary --> redis
+  Api -->|"Prisma"| postgres
+  Api -->|"ioredis / BullMQ"| redis
+  workshop -->|"upload/download URL"| supabase
+  ai -->|"temporary PDF upload/download"| supabase
+  paymentModule -->|"calls through opossum breaker"| gateway
 
   redis --> notificationWorker
-  redis --> csvWorker
+  redis --> studentSyncWorker
   redis --> aiWorker
   notificationWorker --> mailhog
-  csvWorker --> csv
-  csvWorker --> postgres
-  aiWorker --> ai
+  studentSyncWorker --> csv
+  studentSyncWorker --> postgres
+  aiWorker --> supabase
+  aiWorker --> groq
   aiWorker --> postgres
 ```
 
-
-`server/` vẫn là HTTP modular monolith. Các tác vụ nền chạy trong worker process riêng và dùng Bull Queue trên Redis. PostgreSQL là nơi lưu dữ liệu canonical; Redis chỉ dùng cho phối hợp tạm thời và counter phía đọc.
-
-## High-Level Architecture Diagram
+### 3.3 Backend Module Diagram
 
 ```mermaid
-flowchart TD
-  student[Student in client/]
-  staff[Check-in Staff in client/ PWA]
-  api[server/ NestJS API]
-  idemp[(Redis idempotency:key<br/>TTL 24h)]
-  slots[(Redis workshop:id:slots)]
-  breaker[(Redis / memory<br/>payment breaker state)]
-  db[(PostgreSQL)]
-  queue[(Redis Bull queues)]
-  worker[server/ Worker]
-  mailhog[MailHog]
-  gateway[Mock Payment Gateway]
-  pending[(IndexedDB pending_checkins)]
+flowchart LR
+  app["AppModule"]
 
-  student -->|POST /registrations<br/>Idempotency-Key| api
-  api -->|GET idempotency:key| idemp
-  idemp -->|cached result| api
-  api -->|DECR workshop:id:slots| slots
-  slots -->|remaining >= 0| api
-  slots -->|remaining < 0 then INCR| api
-  api -->|create Registration + QR| db
-  api -->|SET idempotency result| idemp
-  api -->|enqueue notification job| queue
-  queue --> worker
-  worker -->|send confirmation email| mailhog
+  app --> config["ConfigModule"]
+  app --> schedule["ScheduleModule"]
+  app --> prisma["PrismaModule"]
+  app --> redis["RedisModule"]
+  app --> rate["RateLimitingModule"]
+  app --> supabase["SupabaseModule"]
+  app --> health["HealthModule"]
+  app --> auth["AuthModule"]
+  app --> workshop["WorkshopModule"]
+  app --> registration["RegistrationModule"]
+  app --> payment["PaymentModule"]
+  app --> checkin["CheckinModule"]
+  app --> notification["NotificationModule"]
+  app --> studentSync["StudentSyncModule"]
+  app --> students["StudentsModule"]
+  app --> ai["AiSummaryModule"]
+  app --> stats["StatsModule"]
 
-  student -->|paid workshop payment request<br/>Idempotency-Key| api
-  api -->|check/update breaker state| breaker
-  breaker -->|OPEN: fast fallback canPay=false| api
-  breaker -->|CLOSED/HALF_OPEN| gateway
-  gateway -->|success/failure| api
-  api -->|update paymentStatus| db
-
-  staff -->|scan QR while online| api
-  api -->|POST /checkin/validate<br/>insert CheckinLog| db
-
-  staff -->|scan QR while offline| pending
-  pending -->|navigator online event| staff
-  staff -->|POST /checkin/sync batch| api
-  api -->|idempotent upsert check-ins| db
-  api -->|synced result| staff
-  staff -->|clear synced items| pending
+  auth --> prisma
+  workshop --> prisma
+  workshop --> redis
+  workshop --> supabase
+  registration --> prisma
+  registration --> redis
+  registration --> notification
+  payment --> prisma
+  checkin --> prisma
+  notification --> redis
+  studentSync --> redis
+  studentSync --> prisma
+  students --> prisma
+  ai --> redis
+  ai --> prisma
+  ai --> supabase
+  stats --> prisma
+  rate --> redis
 ```
 
-Registration là luồng cần consistency cao nhất: API kiểm tra idempotency cache trước khi đụng tới trạng thái slot, dùng Redis `DECR` để claim slot atomic, ghi registration và QR đã xác nhận xuống PostgreSQL, rồi lưu response để retry an toàn. Nếu `DECR` trả về số âm, API bù lại bằng `INCR` và trả `409`.
+Module responsibilities:
 
-Payment được tách khỏi luồng đăng ký miễn phí. Luồng có phí dùng cùng cơ chế idempotency, nhưng lời gọi đến mock gateway đi qua circuit breaker `opossum`; khi breaker open, API trả fallback thay vì tiếp tục gọi gateway.
+| Module | Responsibility |
+|---|---|
+| `AuthModule` | Login, refresh token rotation, logout, JWT strategy. |
+| `WorkshopModule` | Workshop listing/CRUD/status, Redis slot read model, Supabase room-map uploads. |
+| `RegistrationModule` | Student registration, Redis slot claim, registration idempotency cache, QR generation, notification enqueue. |
+| `PaymentModule` | Paid-registration payment, `PaymentAttempt` idempotency, mock gateway, circuit breaker. |
+| `CheckinModule` | QR validation and batch sync into `CheckinLog`. |
+| `NotificationModule` | BullMQ notification queue, email and in-app notification strategies. |
+| `StudentSyncModule` | Nightly/manual legacy CSV sync using BullMQ, writes `StudentSyncLog`. |
+| `StudentsModule` | Organizer student list/detail and synchronous CSV import. |
+| `AiSummaryModule` | PDF validation/extraction, Groq summary calls, async queue endpoint, preview endpoint. |
+| `StatsModule` | Organizer overview counts and capacity summary. |
+| `RateLimitingModule` | Redis-backed token-bucket style throttling through NestJS throttler storage. |
+| `PrismaModule`, `RedisModule`, `SupabaseModule` | Infrastructure adapters. |
 
-Check-in hỗ trợ cả ghi nhận tức thì và ghi nhận trễ. Quét online gọi `POST /api/checkin/validate`; quét offline được lưu trong IndexedDB và đẩy lên `POST /api/checkin/sync` khi có mạng. Endpoint sync phải idempotent để batch gửi lặp không tạo trùng `CheckinLog`.
+## 4. System Architecture
 
+### 4.1 Data Ownership
 
-## Thiết kế cơ sở dữ liệu
+PostgreSQL is the canonical source of truth:
 
-### Lựa chọn database
+- users, roles, password hashes, refresh tokens;
+- workshops, schedules, room map URLs, AI summaries, capacity fields;
+- registrations, QR payloads, checked-in timestamp, payment state;
+- payment attempts and replayable payment results;
+- check-in logs and student sync logs.
 
-Sử dụng **PostgreSQL** (SQL) làm database chính duy nhất.
+Redis is not canonical business storage. It is used for:
 
-**Lý do:**
-- Dữ liệu có cấu trúc quan hệ rõ ràng: User — Registration — Workshop — Room.
-- Cần ràng buộc dữ liệu và transaction cho các bản ghi nghiệp vụ như User, Workshop, Registration, CheckinLog.
-- Luồng claim slot sử dụng Redis `DECR` atomic để xử lý tranh chấp số chỗ; PostgreSQL giữ vai trò lưu dữ liệu canonical và ràng buộc unique để chống đăng ký trùng.
-- Team quen với SQL, không có usecase đặc thù cần NoSQL (không có document unstructured, không cần graph query).
+- `workshop:{id}:slots`: fast atomic remaining-seat counter.
+- `idempotency:{key}`: cached registration response with 24-hour TTL.
+- rate-limit buckets through custom Redis throttler storage.
+- BullMQ queue data for notifications and student sync.
+- AI summary queue data created directly with BullMQ.
 
-Redis được dùng như **cache và coordination layer**, không phải database chính.
+Supabase Storage is responsible for uploaded binary files:
 
-### Schema các entity chính
+- room-map files uploaded through `POST /api/workshops/:id/room-map`;
+- temporary AI summary PDFs uploaded before async processing.
 
-```sql
--- Người dùng hệ thống
-User {
-  id            UUID PRIMARY KEY
-  studentId     VARCHAR UNIQUE      -- mã sinh viên, sync từ CSV
-  email         VARCHAR UNIQUE
-  name          VARCHAR
-  role          ENUM(STUDENT, ORGANIZER, CHECKIN_STAFF)
-  createdAt     TIMESTAMP
-}
+### 4.2 Endpoint Surface
 
--- Workshop
-Workshop {
-  id            UUID PRIMARY KEY
-  title         VARCHAR
-  description   TEXT
-  speaker       VARCHAR
-  room          VARCHAR
-  roomMapUrl    VARCHAR
-  startTime     TIMESTAMP
-  endTime       TIMESTAMP
-  totalSlots    INT                 -- tổng số chỗ canonical; slot còn lại được phối hợp bằng Redis
-  status        ENUM(DRAFT, OPEN, CANCELLED, COMPLETED)
-  isPaid        BOOLEAN
-  price         INT                 -- 0 = miễn phí
-  aiSummary     TEXT                -- kết quả AI Summary
-  createdAt     TIMESTAMP
-}
-
--- Đăng ký tham dự
-Registration {
-  id             UUID PRIMARY KEY
-  userId         UUID REFERENCES User(id)
-  workshopId     UUID REFERENCES Workshop(id)
-  status         ENUM(PENDING, CONFIRMED, CANCELLED)
-  paymentStatus  ENUM(FREE, PENDING, PAID, FAILED, REFUNDED)
-  qrCode         VARCHAR UNIQUE  -- mã QR để check-in
-  idempotencyKey VARCHAR UNIQUE  -- chống request/thanh toán lặp
-  createdAt      TIMESTAMP
-  UNIQUE(userId, workshopId)
-}
-
--- Lịch sử check-in (hỗ trợ offline sync)
-CheckinLog {
-  id             UUID PRIMARY KEY
-  registrationId UUID UNIQUE REFERENCES Registration(id)
-  checkedInAt    TIMESTAMP
-  syncedAt       TIMESTAMP         -- null nếu chưa sync lên server
-}
-```
-
-
-## Access Control Design
-
-### Mô hình phân quyền: RBAC (Role-Based Access Control)
-
-3 nhóm người dùng với quyền hạn cố định, không có điều kiện động → RBAC đơn giản là đủ, không cần ABAC.
-
-| Quyền | STUDENT | ORGANIZER | CHECKIN_STAFF |
-|---|---|---|---|
-| Xem danh sách workshop | ✅ | ✅ | ✅ |
-| Đăng ký workshop | ✅ | ❌ | ❌ |
-| Xem "My Workshops" | ✅ | ❌ | ❌ |
-| Tạo / sửa / hủy workshop | ❌ | ✅ | ❌ |
-| Xem thống kê, danh sách đăng ký | ❌ | ✅ | ❌ |
-| Quản lý users | ❌ | ✅ | ❌ |
-| Quét QR check-in | ❌ | ❌ | ✅ |
-| Xem danh sách đăng ký của workshop (để check-in) | ❌ | ❌ | ✅ |
-
-### Cách triển khai
-
-**JWT Payload:**
-```json
-{
-  "sub": "user-uuid",
-  "role": "STUDENT",
-  "email": "user@example.com",
-  "exp": 1234567890
-}
-```
-
-- **Access token:** hết hạn sau 30 phút.
-- **Refresh token:** hết hạn sau 7 ngày, lưu trong HttpOnly cookie.
-
-**Guard trong NestJS:**
-- `JwtAuthGuard`: verify token, gắn user vào request.
-- `RolesGuard`: đọc `role` từ token, so sánh với decorator `@Roles()` trên endpoint.
-
-**Áp dụng tại từng điểm truy cập:**
-- `/api/workshops` (GET): public, không cần token.
-- `/api/registrations` (POST): yêu cầu `STUDENT`.
-- `/api/admin/workshops` (POST/PATCH/DELETE): yêu cầu `ORGANIZER`.
-- `/api/checkin/validate` (POST): yêu cầu `CHECKIN_STAFF`.
-- Trang admin React: redirect về `/login` nếu role không phải `ORGANIZER`.
-- PWA check-in: ẩn toàn bộ UI nếu role không phải `CHECKIN_STAFF`.
-
-## System Protection Design
-
-### Traffic Spike Control
-
-
-**Giải pháp: Token Bucket** implemented bằng Redis + NestJS Throttler.
-
-**Lý do chọn Token Bucket thay vì Fixed Window:**
-Token Bucket cho phép burst ngắn hạn (sinh viên click nhanh 2–3 lần vẫn qua) nhưng giới hạn tốc độ trung bình. Fixed Window bị lỗi boundary — sinh viên có thể gửi 2x request ngay tại ranh giới cửa sổ thời gian.
-
-**Cấu hình:**
-- Mỗi IP: tối đa **20 request/10 giây** cho endpoint chung.
-- Endpoint `/api/registrations` (POST): tối đa **5 request/30 giây** per user (theo JWT `sub`).
-
-**Hành vi khi vượt ngưỡng:**
-- Trả về HTTP `429 Too Many Requests`.
-- Header `Retry-After` cho client biết bao giờ thử lại.
-- Frontend hiển thị thông báo "Bạn đang thao tác quá nhanh, vui lòng thử lại sau X giây."
-
-**Chống tranh chấp slot (race condition):**
-Dùng Redis `DECR` trên key slot của workshop để claim chỗ atomic. Nếu kết quả âm, API gọi `INCR` để hoàn slot và trả `409`. PostgreSQL lưu bản ghi canonical và ràng buộc unique, không dùng DB row locking làm cơ chế claim slot chính.
-
-### Payment Gateway Instability
-
-
-**Giải pháp: Circuit Breaker** với 3 trạng thái, state lưu trong Redis.
-
-**Các trạng thái:**
-
-| Trạng thái | Mô tả | Chuyển sang |
+| Endpoint | Role | Notes |
 |---|---|---|
-| **Closed** (bình thường) | Mọi request được gửi đến payment gateway | → Open khi ≥ 5 lỗi liên tiếp trong 60 giây |
-| **Open** (đã ngắt) | Không gọi payment gateway, trả lỗi ngay | → Half-Open sau 30 giây |
-| **Half-Open** (thử lại) | Cho 1 request thử qua | → Closed nếu thành công, → Open nếu thất bại |
+| `POST /api/auth/login` | Public | Returns access token, refresh token, and safe user object. |
+| `POST /api/auth/refresh` | Public | Rotates refresh token in PostgreSQL. |
+| `POST /api/auth/logout` | Public | Revokes refresh token if valid. |
+| `GET /api/workshops` | Public | Open workshops only; rate-limited. |
+| `GET /api/workshops/:id` | Public | Hidden for draft workshops. |
+| `GET /api/workshops/admin` | `ORGANIZER` | Full organizer list. |
+| `POST /api/workshops` | `ORGANIZER` | Creates workshop and initializes Redis slot counter. |
+| `PATCH /api/workshops/:id` | `ORGANIZER` | Updates workshop; updates Redis slot counter when capacity changes. |
+| `PATCH /api/workshops/:id/status` | `ORGANIZER` | Changes status; cancelled workshops cannot be reopened. |
+| `POST /api/workshops/:id/room-map` | `ORGANIZER` | Uploads validated image/PDF to Supabase. |
+| `GET /api/registrations/me` | `STUDENT` | Lists current user's registrations. |
+| `POST /api/registrations` | `STUDENT` | Requires `Idempotency-Key`; uses Redis `DECR`. |
+| `GET /api/payment/status` | Public | Exposes payment breaker availability. |
+| `POST /api/payment/registrations/:registrationId/pay` | `STUDENT` | Requires `Idempotency-Key`; creates/replays `PaymentAttempt`. |
+| `POST /api/checkin/validate` | `CHECKIN_STAFF` | Online QR check-in. |
+| `POST /api/checkin/sync` | `CHECKIN_STAFF` | Batch offline check-in sync. |
+| `GET /api/students` | `ORGANIZER` | Student list/search. |
+| `GET /api/students/:id` | `ORGANIZER` | Student detail. |
+| `POST /api/students/import` | `ORGANIZER` | Synchronous CSV upload/import. |
+| `GET /api/student-sync` | `ORGANIZER` | Legacy sync logs. |
+| `POST /api/student-sync/trigger` | `ORGANIZER` | Enqueues manual legacy CSV sync. |
+| `POST /api/workshops/:workshopId/ai-summary` | `ORGANIZER` | Async PDF summary job; returns `202 Accepted`. |
+| `POST /api/ai-summary/preview` | `ORGANIZER` | Synchronous PDF summary preview. |
+| `GET /api/stats/overview` | `ORGANIZER` | Overview counts and capacity. |
 
-**Graceful Degradation khi CB Open:**
-- API vẫn phục vụ bình thường cho các endpoint không liên quan đến thanh toán.
-- Endpoint đăng ký workshop miễn phí: **không bị ảnh hưởng**.
-- Endpoint đăng ký workshop có phí: trả về HTTP `503` với message rõ ràng.
-- Frontend: ẩn nút "Đăng ký" trên workshop có phí, hiển thị banner "Hệ thống thanh toán đang gián đoạn, vui lòng thử lại sau."
-- Trang danh sách workshop, trang chi tiết: **load bình thường**.
+## 5. Database Schema
 
-### Double Charge / Duplicate Registration Prevention
+### 5.1 Prisma Model Relationship Diagram
 
+```mermaid
+erDiagram
+  User ||--o{ RefreshToken : owns
+  User ||--o{ Registration : creates
+  User ||--o{ CheckinLog : performs
+  Workshop ||--o{ Registration : has
+  Registration ||--o{ PaymentAttempt : has
+  Registration ||--o| CheckinLog : checked_in_by
 
-**Giải pháp: Idempotency Key**
+  User {
+    string id PK
+    string studentId UK "nullable"
+    string email UK
+    string name
+    string passwordHash "nullable"
+    Role role
+    datetime createdAt
+  }
 
-**Luồng hoạt động:**
+  RefreshToken {
+    string id PK
+    string userId FK
+    string tokenHash
+    datetime expiresAt
+    datetime revokedAt "nullable"
+    datetime createdAt
+  }
 
-1. Frontend sinh `idempotencyKey = UUID v4` khi user bấm "Đăng ký".
-2. Key được gửi kèm trong header `Idempotency-Key` của request.
-3. Backend kiểm tra Redis: `EXISTS idempotency:{key}`.
-   - Nếu **không tồn tại**: xử lý bình thường, lưu key vào Redis với TTL 24 giờ, lưu key vào cột `idempotencyKey` trong bảng `Registration`.
-   - Nếu **đã tồn tại**: trả về kết quả của lần xử lý trước (lấy từ DB theo key), không xử lý lại.
-4. Nếu payment gateway timeout: trả lỗi cho client, **không xóa key**. Client retry với cùng key → backend phát hiện đã có → kiểm tra trạng thái trong DB → trả về kết quả đúng.
+  Workshop {
+    string id PK
+    string title
+    string description
+    string speaker
+    string room
+    string roomMapUrl "nullable"
+    datetime startTime
+    datetime endTime
+    int totalSlots
+    int slotLeft
+    WorkshopStatus status
+    boolean isPaid
+    int price
+    string aiSummary "nullable"
+    datetime createdAt
+  }
 
-**Nơi lưu trữ:** Redis (kiểm tra nhanh) + PostgreSQL cột `idempotencyKey` (source of truth khi Redis bị xóa).
+  Registration {
+    string id PK
+    string userId FK
+    string workshopId FK
+    RegistrationStatus status
+    PaymentStatus paymentStatus
+    string qrCode UK "nullable"
+    string idempotencyKey UK "nullable"
+    datetime checkedInAt "nullable"
+    datetime createdAt
+  }
 
-**TTL:** 24 giờ — đủ dài để cover mọi retry trong một phiên đăng ký.
+  PaymentAttempt {
+    string id PK
+    string registrationId FK
+    string idempotencyKey UK
+    PaymentAttemptStatus status
+    int amount
+    string gatewayRef UK "nullable"
+    json responseJson "nullable"
+    datetime createdAt
+    datetime updatedAt
+  }
 
-## Architecture Decision Records
+  CheckinLog {
+    string id PK
+    string registrationId UK_FK
+    string staffId FK
+    string deviceId "nullable"
+    datetime checkedInAt
+    datetime syncedAt "nullable"
+  }
 
-### ADR-1: JWT thuần thay vì Session
+  StudentSyncLog {
+    string id PK
+    string filename
+    int totalRows
+    int imported
+    int errors
+    json errorDetails "nullable"
+    datetime runAt
+  }
+```
 
-**Chọn:** JWT stateless (access token 30 phút + refresh token 7 ngày trong HttpOnly cookie).
+### 5.2 Important Enums and Constraints
 
-**Lý do:** Backend NestJS có thể scale ngang mà không cần sticky session. Mỗi request tự verify token mà không cần round-trip đến Redis. RBAC 3 nhóm quyền cố định — không có usecase cần thu hồi token ngay lập tức.
+```text
+Role:
+  STUDENT, ORGANIZER, CHECKIN_STAFF
 
-**Đánh đổi:** Nếu token bị lộ, phải chờ hết 30 phút mới vô hiệu. Chấp nhận được ở scope đồ án vì không có dữ liệu tài chính thật.
+WorkshopStatus:
+  DRAFT, OPEN, CANCELLED, COMPLETED
 
----
+RegistrationStatus:
+  PENDING, CONFIRMED, CANCELLED
 
-### ADR-2: PostgreSQL thay vì MongoDB
+PaymentStatus:
+  FREE, PENDING, PAID, FAILED, REFUNDED
 
-**Chọn:** PostgreSQL duy nhất cho toàn bộ dữ liệu nghiệp vụ.
+PaymentAttemptStatus:
+  PENDING, SUCCEEDED, FAILED
+```
 
-**Lý do:** Dữ liệu có quan hệ rõ ràng, cần JOIN, ràng buộc unique và transaction ACID cho bản ghi canonical. Bài toán tranh chấp slot được xử lý bằng Redis `DECR`; PostgreSQL đảm bảo dữ liệu đăng ký không trùng và có thể audit. Team quen SQL.
+Key constraints in Prisma:
 
-**Đánh đổi:** Khó scale write theo chiều ngang hơn MongoDB. Không ảnh hưởng ở quy mô đồ án.
+- `User.email` is unique.
+- `User.studentId` is unique and nullable.
+- `Registration.qrCode` is unique and nullable.
+- `Registration.idempotencyKey` is unique and nullable.
+- `Registration` has `@@unique([userId, workshopId])`, preventing duplicate user-workshop registrations.
+- `PaymentAttempt.idempotencyKey` is unique.
+- `PaymentAttempt.gatewayRef` is unique and nullable.
+- `CheckinLog.registrationId` is unique, so each registration can be checked in only once.
+- `RefreshToken.userId` and `PaymentAttempt.registrationId` are indexed.
 
----
+## 6. Critical Flow Diagrams
 
-### ADR-3: Bull Queue thay vì Kafka
+### 6.1 Student Registration With Redis Slot Claim and Idempotency
 
-**Chọn:** Bull Queue (Redis-backed) cho tác vụ bất đồng bộ — gửi email, AI summary, CSV import.
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Student
+  participant SPA as React SPA
+  participant API as RegistrationModule
+  participant Redis
+  participant DB as PostgreSQL
+  participant Queue as Notification Queue
 
-**Lý do:** Team 2 người, không có thời gian vận hành Kafka cluster. Bull Queue đơn giản, tích hợp tốt với NestJS, đủ dùng cho lượng job của hệ thống này. Redis đã có sẵn cho cache và rate limiting — tái sử dụng không cần thêm infrastructure.
+  Student->>SPA: Click register
+  SPA->>API: POST /api/registrations<br/>Idempotency-Key + workshopId
+  API->>Redis: GET idempotency:{key}
+  alt cached response exists
+    Redis-->>API: cached JSON
+    API-->>SPA: replay previous response
+  else no cached response
+    API->>DB: Find workshop
+    API->>Redis: SET workshop:{id}:slots NX
+    API->>Redis: DECR workshop:{id}:slots
+    alt remaining < 0
+      API->>Redis: INCR workshop:{id}:slots
+      API-->>SPA: 409 Workshop is full
+    else slot claimed
+      API->>DB: Transaction: create Registration, decrement Workshop.slotLeft
+      alt duplicate user/workshop or idempotency unique conflict
+        API->>Redis: INCR workshop:{id}:slots
+        API-->>SPA: replay same idempotency result or 409 duplicate
+      else success
+        API->>Redis: SET idempotency:{key} response EX 24h
+        API->>Queue: Add registration confirmation job
+        API-->>SPA: Registration + QR image data URL
+      end
+    end
+  end
+```
 
-**Đánh đổi:** Không có message replay, partition, consumer group như Kafka. Không cần thiết ở quy mô này.
+The Redis counter is the fast concurrency gate. PostgreSQL remains canonical and enforces duplicate-registration constraints.
 
----
+### 6.2 Paid Registration Payment With PaymentAttempt and Circuit Breaker
 
-### ADR-4: Pipe-and-Filter cho AI Summary pipeline
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Student
+  participant SPA as React SPA
+  participant API as PaymentModule
+  participant DB as PostgreSQL
+  participant Breaker as Opossum Circuit Breaker
+  participant Gateway as MockPaymentGateway
 
-**Chọn:** Pipe-and-Filter — mỗi bước xử lý độc lập: Upload PDF → Extract text → Clean text → Call AI API → Save summary.
+  Student->>SPA: Click Pay now
+  SPA->>API: POST /api/payment/registrations/{id}/pay<br/>Idempotency-Key
+  API->>DB: Load registration for current student
+  API->>DB: Find PaymentAttempt by idempotencyKey
+  alt existing attempt
+    API-->>SPA: Replay stored success/unavailable result or error
+  else new attempt
+    API->>DB: Create PaymentAttempt(PENDING)
+    API->>Breaker: fire charge request
+    alt breaker open
+      Breaker-->>API: canPay=false fallback
+      API->>DB: Mark attempt FAILED with responseJson
+      API-->>SPA: Payment unavailable
+    else gateway succeeds
+      Breaker->>Gateway: charge
+      Gateway-->>Breaker: gatewayRef
+      API->>DB: Transaction: Registration.PAID, attempt.SUCCEEDED
+      API-->>SPA: Payment confirmed
+    else gateway fails or times out
+      Breaker-->>API: error
+      API->>DB: Mark attempt FAILED
+      API-->>SPA: 502 retryable payment failure
+    end
+  end
+```
 
-**Lý do:** Dễ thêm/bớt bước xử lý (ví dụ: thêm bước dịch thuật) mà không ảnh hưởng các bước khác. Mỗi bước có thể retry độc lập khi lỗi. Phù hợp với Bull Queue — mỗi filter là một job.
+Implementation detail: payment idempotency is stored in PostgreSQL via `PaymentAttempt`, not Redis. The circuit breaker state is held in memory by `opossum`.
 
-**Đánh đổi:** Dữ liệu phải serialize/deserialize giữa các bước, tốn thêm một chút overhead. Không đáng kể với kích thước PDF vừa phải.
+### 6.3 Check-in Validate and Offline Batch Sync
 
----
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Staff
+  participant PWA as Check-in PWA
+  participant IDB as IndexedDB
+  participant API as CheckinModule
+  participant DB as PostgreSQL
 
-### ADR-5: IndexedDB cho offline check-in PWA
+  Staff->>PWA: Scan or enter QR
+  alt browser online
+    PWA->>API: POST /api/checkin/validate
+    API->>DB: Find eligible Registration by qrCode
+    API->>DB: Create CheckinLog + set Registration.checkedInAt
+    API-->>PWA: Check-in result or alreadyCheckedIn
+  else browser offline
+    PWA->>IDB: Save pending check-in with deviceId + checkedInAt
+    PWA-->>Staff: Saved offline
+  end
 
-**Chọn:** IndexedDB trong PWA (Progressive Web App) để lưu check-in tạm khi mất mạng.
+  PWA->>PWA: online event or Sync now
+  PWA->>IDB: Read pending_checkins
+  PWA->>API: POST /api/checkin/sync batch
+  API->>DB: Load registrations by QR/id
+  API->>DB: createMany CheckinLog(skipDuplicates=true)
+  API->>DB: Update Registration.checkedInAt
+  API-->>PWA: synced / duplicate / rejected counts
+  PWA->>IDB: Remove submitted local records
+```
 
-**Lý do:** PWA không cần cài đặt, nhân sự dùng ngay trên trình duyệt mobile. IndexedDB là storage API native của browser, không cần thư viện ngoài, đủ dùng cho volume check-in của một phòng workshop (~60 bản ghi).
+The server treats duplicates as successful duplicate results instead of creating extra logs. The frontend removes submitted records after the sync request returns, including rejected records.
 
-**Đánh đổi:** Không có SQLite với đầy đủ query capability. Dữ liệu mất nếu user xóa storage trình duyệt. Chấp nhận được vì sync lên server ngay khi có mạng.
+### 6.4 AI Summary Flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Organizer
+  participant SPA as React Organizer UI
+  participant API as AiSummaryModule
+  participant Storage as Supabase Storage
+  participant Redis as Redis / BullMQ
+  participant Worker as AI Summary Worker
+  participant Groq as Groq AI API
+  participant DB as PostgreSQL
+
+  alt Async endpoint supported by backend
+    Organizer->>SPA: Upload workshop PDF
+    SPA->>API: POST /api/workshops/{id}/ai-summary
+    API->>Storage: Upload temp PDF
+    API->>Redis: Add generate-workshop-summary job
+    API-->>SPA: 202 Accepted + jobId
+    Redis->>Worker: Deliver job
+    Worker->>Storage: Download temp PDF
+    Worker->>Worker: Extract and clean PDF text
+    Worker->>Groq: Chat completion request
+    Groq-->>Worker: 3-5 sentence summary
+    Worker->>DB: Update Workshop.aiSummary
+    Worker->>Storage: Remove temp PDF
+  else Frontend form currently uses preview
+    SPA->>API: POST /api/ai-summary/preview
+    API->>API: Extract and clean PDF text
+    API->>Groq: Chat completion request
+    API-->>SPA: summary text
+    Organizer->>SPA: Save workshop with aiSummary
+  end
+```
+
+The code uses Groq (`https://api.groq.com/openai/v1/chat/completions`) and the default model `llama-3.3-70b-versatile`.
+
+### 6.5 Student Import and Legacy Sync
+
+```mermaid
+flowchart TB
+  subgraph SyncPath["Scheduled/manual legacy sync"]
+    cron["ScheduleModule<br/>2 AM cron"]
+    manual["POST /api/student-sync/trigger"]
+    queue["BullMQ student-sync queue"]
+    worker["StudentSyncWorker"]
+    file["LEGACY_CSV_PATH<br/>or data/sample-students.csv"]
+    log["StudentSyncLog"]
+  end
+
+  subgraph UploadPath["Organizer CSV upload"]
+    upload["POST /api/students/import"]
+    parser["StudentsService.importCsv"]
+  end
+
+  users[("User table<br/>role=STUDENT")]
+
+  cron --> queue
+  manual --> queue
+  queue --> worker
+  worker --> file
+  worker -->|"row validation + upsert by studentId"| users
+  worker --> log
+
+  upload --> parser
+  parser -->|"row validation + create only"| users
+```
+
+There are two student-data workflows. The legacy sync worker is resilient to row-level errors and records `StudentSyncLog`. The organizer upload path is synchronous, capped at 1000 rows, and returns created/skipped/errors directly; it does not write `StudentSyncLog`.
+
+### 6.6 Notification Queue
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Registration as RegistrationModule
+  participant Redis as BullMQ on Redis
+  participant Worker as NotificationWorker
+  participant InApp as InAppNotificationStrategy
+  participant Email as EmailNotificationStrategy
+  participant SMTP as MailHog/SMTP
+
+  Registration->>Redis: add REGISTRATION_CONFIRMED_JOB
+  Redis->>Worker: deliver job, concurrency 5
+  Worker->>InApp: send(job)
+  InApp-->>Worker: log confirmation availability
+  Worker->>Email: send(job)
+  Email->>SMTP: sendMail()
+```
+
+The in-app channel is currently a log strategy. Email delivery is implemented through Nodemailer and defaults to MailHog at `localhost:1025`.
+
+## 7. Access Control Design
+
+UniHub uses RBAC because the permission model is role-based and stable. Roles are stored in `User.role` and copied into the JWT payload.
+
+| Capability | STUDENT | ORGANIZER | CHECKIN_STAFF |
+|---|---:|---:|---:|
+| View open workshops | Yes | Yes | Yes |
+| Register for workshop | Yes | No | No |
+| View own registrations and QR | Yes | No | No |
+| Pay paid registration | Yes | No | No |
+| Create/update/status-change workshop | No | Yes | No |
+| Upload room map / AI summary PDF | No | Yes | No |
+| View dashboard statistics | No | Yes | No |
+| List/import/sync students | No | Yes | No |
+| Validate and sync check-ins | No | No | Yes |
+
+Backend enforcement:
+
+- `JwtAuthGuard` validates bearer access tokens.
+- `RolesGuard` checks `@Roles(...)` metadata on protected endpoints.
+- Public endpoints still pass through global rate limiting.
+
+Frontend enforcement:
+
+- `ProtectedRoute` checks stored auth state and allowed roles.
+- Role home routes are `/student`, `/organizer`, and `/checkin`.
+- API requests attach `Authorization: Bearer <token>` through Axios interceptors and try refresh on 401.
+
+## 8. System Protection Design
+
+### 8.1 Traffic Spike Control
+
+The current implementation uses NestJS Throttler with custom Redis storage. The tracker key is based on authenticated user id when available, otherwise client IP.
+
+Current policy constants:
+
+| Policy | Limit | TTL |
+|---|---:|---:|
+| Global | `RATE_LIMIT_GLOBAL_LIMIT` env or 20 | `RATE_LIMIT_GLOBAL_TTL_MS` env or 10 seconds |
+| Registration write | 10 | 10 seconds |
+| Workshop read | 100 | 60 seconds |
+
+The registration endpoint also uses Redis `DECR` for slot contention. If the decrement result is negative, the API compensates with `INCR` and returns conflict.
+
+### 8.2 Duplicate Registration and Retry Safety
+
+Registration idempotency uses both Redis and PostgreSQL:
+
+- Frontend generates a UUID-like `Idempotency-Key`.
+- Backend checks Redis cache first.
+- Backend checks `Registration.idempotencyKey` if cache is missing.
+- Successful registration response is cached in Redis for 24 hours.
+- PostgreSQL uniqueness on `Registration.idempotencyKey` and `[userId, workshopId]` protects against repeated writes.
+
+Payment idempotency uses `PaymentAttempt.idempotencyKey`:
+
+- The first request creates a `PaymentAttempt(PENDING)`.
+- Later requests with the same key replay the stored result when available.
+- A key reused for another registration is rejected.
+
+### 8.3 Payment Gateway Instability
+
+Payment uses `opossum` circuit breaker around `MockPaymentGateway.charge`.
+
+Current breaker settings:
+
+- timeout: 3000 ms
+- error threshold: 50 percent
+- reset timeout: 30 seconds
+- volume threshold: 2
+
+When the breaker is open, `GET /api/payment/status` and payment requests return `canPay=false`. Free workshop registration and normal workshop browsing are not dependent on the payment gateway.
+
+### 8.4 Check-in Reliability
+
+The check-in UI is PWA-capable:
+
+- `client/public/sw.js` caches the app shell and avoids caching `/api`.
+- offline scans are stored in IndexedDB object store `pending_checkins`;
+- each device has a persistent `deviceId` in localStorage;
+- browser `online` events trigger batch sync;
+- server-side uniqueness on `CheckinLog.registrationId` prevents duplicate check-ins.
+
+## 9. Architecture Decision Records
+
+### ADR-001: Modular Monolith Instead of Microservices
+
+**Decision:** Build UniHub as a NestJS modular monolith.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** The project has a small team and a course-project deployment scope. A modular monolith keeps local development, transactions, debugging, and deployment simple while still separating business capabilities into modules.
+
+**Tradeoff:** Independent deployment per capability is not available now. The module boundaries make future extraction possible if traffic or team size justifies it.
+
+### ADR-002: React/Vite Frontend and NestJS Backend
+
+**Decision:** Use React + Vite for the browser app and NestJS for the API.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** React/Vite gives a fast SPA workflow and supports the PWA check-in route. NestJS provides module structure, guards, validation pipes, scheduling, and BullMQ integration.
+
+**Tradeoff:** The SPA depends on client-side routing and stored tokens. The backend still owns authorization, so frontend route protection is UX support, not a security boundary.
+
+### ADR-003: PostgreSQL as Canonical Database
+
+**Decision:** Store canonical business data in PostgreSQL through Prisma.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** UniHub data is relational: users, workshops, registrations, payment attempts, check-in logs, and sync logs. PostgreSQL provides ACID transactions, unique constraints, indexes, and auditable state.
+
+**Tradeoff:** PostgreSQL is not used as the high-contention slot counter. Redis handles fast atomic slot claims, while PostgreSQL persists the final registration and capacity state.
+
+### ADR-004: Redis for Counters, Idempotency Cache, Rate Limiting, and Queues
+
+**Decision:** Use Redis as a coordination and queue backing service.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** Redis supports atomic `DECR`/`INCR`, short-lived idempotency response cache, rate-limit counters, and BullMQ. Reusing one infrastructure component keeps the local stack small.
+
+**Tradeoff:** Redis data is treated as rebuildable coordination state, not canonical storage. The database still needs constraints for correctness.
+
+### ADR-005: BullMQ for Async Jobs
+
+**Decision:** Use BullMQ instead of Kafka/RabbitMQ for notifications, student sync, and AI summary jobs.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** BullMQ integrates directly with NestJS and Redis, supports retries/backoff, and is sufficient for the expected course-project workload.
+
+**Tradeoff:** Current workers run inside the Nest process. That is simpler locally but less isolated than dedicated worker processes. A production deployment should split API and workers when workload grows.
+
+### ADR-006: Idempotency Keys for Registration and Payment
+
+**Decision:** Require `Idempotency-Key` on registration and payment write operations.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** Student clients may retry after timeouts or double clicks. Idempotency prevents duplicate registrations and duplicate payment attempts.
+
+**Tradeoff:** Registration and payment use different persistence mechanisms: registration uses Redis cache plus `Registration.idempotencyKey`, while payment uses `PaymentAttempt.idempotencyKey`. The behavior is correct but should be documented clearly for maintainers.
+
+### ADR-007: Circuit Breaker for Mock Payment Gateway
+
+**Decision:** Wrap mock payment calls with an `opossum` circuit breaker.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** Paid registration should degrade without affecting free registration, workshop browsing, or organizer workflows. The breaker fails fast when the gateway is unstable.
+
+**Tradeoff:** Breaker state is currently in memory. It is simple for one API process but not shared across horizontally scaled instances.
+
+### ADR-008: Supabase Storage for Uploaded Files
+
+**Decision:** Use Supabase Storage for room maps and temporary AI-summary PDFs.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** PostgreSQL should not store binary files. Supabase Storage provides object storage and public URLs for room maps.
+
+**Tradeoff:** The backend currently requires Supabase configuration at boot because `SupabaseModule` is imported globally. Local development must provide Supabase env values even when only testing unrelated modules.
+
+### ADR-009: QR-Based Check-in With Offline Browser Queue
+
+**Decision:** Use generated QR payloads for registration confirmation and check-in.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** QR codes make door validation fast and mobile-friendly. IndexedDB lets staff continue scanning during connectivity loss and sync later.
+
+**Tradeoff:** Offline scans cannot be fully validated until the network returns. The system handles this by marking invalid or duplicate records during batch sync.
+
+### ADR-010: Groq for AI PDF Summary
+
+**Decision:** Use Groq chat completions for workshop PDF summaries.
+
+**Status:** Accepted and implemented.
+
+**Rationale:** The code extracts PDF text with `pdf-parse`, cleans/truncates it, and asks Groq for a concise student-facing summary. The summary is saved on the workshop record.
+
+**Tradeoff:** Summary quality and latency depend on an external API key and Groq availability. The sync preview endpoint can block the request while calling Groq; the async endpoint avoids that by queueing work.
+
+## 10. Implemented vs Partial/Scaffolded
+
+| Feature | Status | Notes |
+|---|---|---|
+| Auth + RBAC | Implemented | JWT, refresh token rotation, role guards, protected frontend routes. |
+| Workshop management | Implemented | Includes room-map upload through Supabase. |
+| Registration concurrency | Implemented | Redis slot counter plus PostgreSQL constraints. |
+| Registration idempotency | Implemented | Redis 24-hour response cache and database unique key. |
+| Payment flow | Implemented for mock payment | No real payment provider; uses simulated failures. |
+| Payment circuit breaker | Implemented | In-memory breaker state, not Redis-backed. |
+| Payment idempotency | Implemented | `PaymentAttempt` table. |
+| Notifications | Implemented | Email via SMTP/MailHog; in-app channel currently logs only. |
+| Check-in online/offline | Implemented | Camera/manual QR, IndexedDB queue, batch sync. |
+| Student synchronous CSV import | Implemented | Organizer upload, create-only, 1000-row cap. |
+| Legacy student sync | Implemented | Scheduled/manual BullMQ worker, row-level upsert, logs. |
+| AI summary preview | Implemented | Frontend uses synchronous preview endpoint in workshop form. |
+| AI summary async queue | Implemented in backend | Endpoint and worker exist; current form does not use this path by default. |
+| Independent worker deployment | Partial | Workers are architecturally separable but currently hosted in the Nest API process. |
+| Production monitoring/CI/CD | Out of scope | Local Docker Compose provides PostgreSQL, Redis, and MailHog only. |
