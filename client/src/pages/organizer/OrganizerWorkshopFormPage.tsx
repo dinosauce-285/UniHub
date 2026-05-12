@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   createWorkshop,
+  generateWorkshopDescriptionFromPdf,
   listOrganizerWorkshops,
   updateWorkshop,
   updateWorkshopStatus,
@@ -14,6 +15,7 @@ import { getApiErrorMessage } from '../../utils/errors';
 type WorkshopFormState = {
   title: string;
   description: string;
+  aiSummary: string;
   speaker: string;
   room: string;
   roomMapUrl: string;
@@ -28,6 +30,7 @@ type WorkshopFormState = {
 const blankForm: WorkshopFormState = {
   title: '',
   description: '',
+  aiSummary: '',
   speaker: '',
   room: '',
   roomMapUrl: '',
@@ -40,6 +43,7 @@ const blankForm: WorkshopFormState = {
 };
 
 const statuses: WorkshopStatus[] = ['DRAFT', 'OPEN', 'CANCELLED', 'COMPLETED'];
+const MAX_AI_PDF_SIZE_BYTES = 10 * 1024 * 1024;
 
 function toDateTimeLocal(value: string) {
   const date = new Date(value);
@@ -55,6 +59,7 @@ function fromWorkshop(workshop: Workshop): WorkshopFormState {
   return {
     title: workshop.title,
     description: workshop.description,
+    aiSummary: workshop.aiSummary ?? '',
     speaker: workshop.speaker,
     room: workshop.room,
     roomMapUrl: workshop.roomMapUrl ?? '',
@@ -71,6 +76,7 @@ function toPayload(form: WorkshopFormState): WorkshopPayload {
   return {
     title: form.title.trim(),
     description: form.description.trim(),
+    aiSummary: form.aiSummary.trim() || null,
     speaker: form.speaker.trim(),
     room: form.room.trim(),
     roomMapUrl: form.roomMapUrl.trim() || null,
@@ -93,6 +99,9 @@ export function OrganizerWorkshopFormPage() {
   const [isLoading, setIsLoading] = useState(isEditMode);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [isGeneratingAiSummary, setIsGeneratingAiSummary] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState('');
+  const [aiSummarySuccess, setAiSummarySuccess] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -140,6 +149,85 @@ export function OrganizerWorkshopFormPage() {
   ) {
     setForm((current) => ({ ...current, [field]: value }));
   }
+
+  function validateAiPdfFile(file: File) {
+    const hasPdfExtension = file.name.toLowerCase().endsWith('.pdf');
+    const hasPdfType = file.type === 'application/pdf' || file.type === '';
+
+    if (!hasPdfExtension || !hasPdfType) {
+      return 'Select a PDF file. Other document types are not supported.';
+    }
+
+    if (file.size > MAX_AI_PDF_SIZE_BYTES) {
+      return 'Select a PDF that is 10 MB or smaller.';
+    }
+
+    return '';
+  }
+
+  async function generateAiSummaryFromPdf(file: File) {
+    setIsGeneratingAiSummary(true);
+    setAiSummaryError('');
+    setAiSummarySuccess('');
+
+    try {
+      const result = await generateWorkshopDescriptionFromPdf(file);
+      updateForm('aiSummary', result.summary);
+      setAiSummarySuccess('AI summary generated from the PDF.');
+    } catch (err) {
+      setAiSummaryError(
+        getApiErrorMessage(err, 'Failed to generate an AI summary from this PDF'),
+      );
+    } finally {
+      setIsGeneratingAiSummary(false);
+    }
+  }
+
+  function handleAiPdfChange(file: File | undefined) {
+    setAiSummaryError('');
+    setAiSummarySuccess('');
+
+    if (!file) {
+      return;
+    }
+
+    const validationMessage = validateAiPdfFile(file);
+
+    if (validationMessage) {
+      setAiSummaryError(validationMessage);
+      return;
+    }
+
+    void generateAiSummaryFromPdf(file);
+  }
+
+  function handleUseAiSummaryAsDescription() {
+    const summary = form.aiSummary.trim();
+    if (!summary) {
+      return;
+    }
+
+    updateForm('description', summary);
+    setAiSummarySuccess('Description replaced with the AI summary.');
+  }
+
+  function handleAppendAiSummaryToDescription() {
+    const summary = form.aiSummary.trim();
+    if (!summary) {
+      return;
+    }
+
+    const description = form.description.trim();
+    updateForm('description', description ? `${description}\n\n${summary}` : summary);
+    setAiSummarySuccess('AI summary appended to the description.');
+  }
+
+  function handleClearAiSummary() {
+    updateForm('aiSummary', '');
+    setAiSummaryError('');
+    setAiSummarySuccess('AI summary cleared.');
+  }
+
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -306,15 +394,90 @@ export function OrganizerWorkshopFormPage() {
             Paid workshop
           </label>
 
-          <label className="text-sm font-medium text-ink">
-            Description
-            <textarea
-              required
-              className="mt-1 block min-h-32 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-              value={form.description}
-              onChange={(event) => updateForm('description', event.target.value)}
-            />
-          </label>
+          <div className="grid gap-3">
+            <label className="text-sm font-medium text-ink">
+              Description
+              <span className="mt-1 block text-xs font-normal text-muted">
+                Public description shown to students.
+              </span>
+              <textarea
+                required
+                className="mt-1 block min-h-32 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                value={form.description}
+                onChange={(event) => updateForm('description', event.target.value)}
+              />
+            </label>
+
+            <div className="rounded-md border border-border bg-surface-muted p-4">
+              <div className="grid gap-4">
+                <label className="text-sm font-medium text-ink sm:flex-1">
+                  AI Summary from PDF
+                  <input
+                    accept=".pdf,application/pdf"
+                    className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary-contrast"
+                    disabled={isGeneratingAiSummary}
+                    type="file"
+                    onChange={(event) => {
+                      handleAiPdfChange(event.target.files?.[0]);
+                    }}
+                  />
+                </label>
+
+                <label className="text-sm font-medium text-ink">
+                  AI Summary
+                  <textarea
+                    className="mt-1 block min-h-28 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+                    placeholder="Upload a PDF to generate a summary, or write one here."
+                    value={form.aiSummary}
+                    onChange={(event) => updateForm('aiSummary', event.target.value)}
+                  />
+                </label>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <button
+                    className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-primary-contrast transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={!form.aiSummary.trim()}
+                    type="button"
+                    onClick={handleUseAiSummaryAsDescription}
+                  >
+                    {form.description.trim()
+                      ? 'Replace description with AI summary'
+                      : 'Use as description'}
+                  </button>
+                  <button
+                    className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-ink hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={!form.aiSummary.trim()}
+                    type="button"
+                    onClick={handleAppendAiSummaryToDescription}
+                  >
+                    Append to description
+                  </button>
+                  <button
+                    className="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-ink hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={!form.aiSummary}
+                    type="button"
+                    onClick={handleClearAiSummary}
+                  >
+                    Clear AI summary
+                  </button>
+                </div>
+              </div>
+
+              {isGeneratingAiSummary ? (
+                <p className="mt-3 text-sm text-muted">
+                  Generating an AI summary from the PDF...
+                </p>
+              ) : null}
+              {aiSummarySuccess ? (
+                <p className="mt-3 text-sm text-emerald-700">
+                  {aiSummarySuccess}
+                </p>
+              ) : null}
+              {aiSummaryError ? (
+                <p className="mt-3 text-sm text-red-700">{aiSummaryError}</p>
+              ) : null}
+            </div>
+          </div>
 
           <label className="text-sm font-medium text-ink">
             Room map URL
@@ -335,15 +498,6 @@ export function OrganizerWorkshopFormPage() {
               onChange={(event) => setRoomMapFile(event.target.files?.[0] ?? null)}
             />
           </label>
-
-          {initialWorkshop?.aiSummary ? (
-            <div className="rounded-md bg-surface-muted p-4">
-              <h2 className="text-sm font-semibold text-ink">AI Summary</h2>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted">
-                {initialWorkshop.aiSummary}
-              </p>
-            </div>
-          ) : null}
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Link

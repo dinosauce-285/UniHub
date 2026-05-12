@@ -95,12 +95,14 @@ export class WorkshopService {
     const isPaid = dto.isPaid ?? false;
     const price = this.normalizePrice(isPaid, dto.price ?? 0);
     const roomMapUrl = this.normalizeRoomMapUrl(dto.roomMapUrl);
+    const aiSummary = this.normalizeOptionalText(dto.aiSummary);
     const slotLeft = dto.totalSlots;
 
     const workshop = await this.prisma.workshop.create({
       data: {
         title: dto.title.trim(),
         description: dto.description.trim(),
+        aiSummary,
         speaker: dto.speaker.trim(),
         room: dto.room.trim(),
         roomMapUrl,
@@ -133,6 +135,10 @@ export class WorkshopService {
       dto.roomMapUrl === undefined
         ? existing.roomMapUrl
         : this.normalizeRoomMapUrl(dto.roomMapUrl);
+    const aiSummary =
+      dto.aiSummary === undefined
+        ? undefined
+        : this.normalizeOptionalText(dto.aiSummary);
 
     let slotLeft = existing.slotLeft;
     if (dto.totalSlots !== undefined) {
@@ -150,6 +156,7 @@ export class WorkshopService {
       data: {
         title: dto.title?.trim(),
         description: dto.description?.trim(),
+        aiSummary,
         speaker: dto.speaker?.trim(),
         room: dto.room?.trim(),
         roomMapUrl,
@@ -316,6 +323,11 @@ export class WorkshopService {
     }
 
     throw new BadRequestException('Room map URL must be a valid URL');
+  }
+
+  private normalizeOptionalText(value: string | null | undefined) {
+    const trimmed = value?.trim();
+    return trimmed || null;
   }
 
   private validateRoomMapFile(file: Express.Multer.File | undefined) {

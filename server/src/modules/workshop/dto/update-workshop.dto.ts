@@ -21,6 +21,11 @@ export class UpdateWorkshopDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(4000)
+  aiSummary?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(160)
   speaker?: string;
 

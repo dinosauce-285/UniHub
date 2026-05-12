@@ -18,11 +18,11 @@ import { AiSummaryService } from './ai-summary.service';
 
 const MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024;
 
-@Controller('workshops/:workshopId/ai-summary')
+@Controller()
 export class AiSummaryController {
   constructor(private readonly aiSummaryService: AiSummaryService) {}
 
-  @Post()
+  @Post('workshops/:workshopId/ai-summary')
   @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ORGANIZER)
@@ -40,6 +40,23 @@ export class AiSummaryController {
     this.validatePdfFile(file);
 
     return this.aiSummaryService.enqueueSummary(workshopId, file);
+  }
+
+  @Post('ai-summary/preview')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ORGANIZER)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fileSize: MAX_PDF_SIZE_BYTES,
+      },
+    }),
+  )
+  async preview(@UploadedFile() file: Express.Multer.File | undefined) {
+    this.validatePdfFile(file);
+
+    return this.aiSummaryService.generatePreviewSummary(file);
   }
 
   private validatePdfFile(
