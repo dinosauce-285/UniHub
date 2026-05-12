@@ -13,9 +13,14 @@ export type AiSummaryQueueResponse = {
   model: string;
 };
 
+export type AiSummaryPreviewResponse = {
+  summary: string;
+};
+
 export type WorkshopPayload = {
   title: string;
   description: string;
+  aiSummary?: string | null;
   speaker: string;
   room: string;
   roomMapUrl?: string | null;
@@ -102,6 +107,23 @@ export async function uploadWorkshopAiSummary(workshopId: string, file: File) {
 
   const response = await api.post<AiSummaryQueueResponse>(
     `/workshops/${workshopId}/ai-summary`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    },
+  );
+
+  return response.data;
+}
+
+export async function generateWorkshopDescriptionFromPdf(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await api.post<AiSummaryPreviewResponse>(
+    '/ai-summary/preview',
     formData,
     {
       headers: {

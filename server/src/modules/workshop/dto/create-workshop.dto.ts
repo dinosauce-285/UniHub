@@ -19,6 +19,11 @@ export class CreateWorkshopDto {
   @MaxLength(4000)
   description: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  aiSummary?: string | null;
+
   @IsString()
   @MaxLength(160)
   speaker: string;
