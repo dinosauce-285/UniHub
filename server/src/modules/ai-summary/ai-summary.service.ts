@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job, Queue, Worker } from 'bullmq';
 import { PDFParse } from 'pdf-parse';
@@ -96,6 +102,12 @@ export class AiSummaryService implements OnModuleDestroy {
     };
   }
 
+  async generatePreviewSummary(file: Express.Multer.File) {
+    const summary = await this.generateSummaryFromPdfBuffer(file.buffer);
+
+    return { summary };
+  }
+
   private async processSummaryJob(job: Job<AiSummaryJob>) {
     const { data: fileData, error } = await this.supabaseService
       .getClient()
@@ -107,14 +119,7 @@ export class AiSummaryService implements OnModuleDestroy {
     }
 
     const pdfBuffer = Buffer.from(await fileData.arrayBuffer());
-    const rawText = await this.extractPdfText(pdfBuffer);
-    const cleanedText = this.cleanText(rawText);
-
-    if (!cleanedText) {
-      throw new Error('PDF does not contain extractable text');
-    }
-
-    const summary = await this.generateSummary(cleanedText);
+    const summary = await this.generateSummaryFromPdfBuffer(pdfBuffer);
 
     await this.prisma.workshop.update({
       where: { id: job.data.workshopId },
@@ -127,6 +132,17 @@ export class AiSummaryService implements OnModuleDestroy {
       workshopId: job.data.workshopId,
       summaryLength: summary.length,
     };
+  }
+
+  private async generateSummaryFromPdfBuffer(pdfBuffer: Buffer) {
+    const rawText = await this.extractPdfText(pdfBuffer);
+    const cleanedText = this.cleanText(rawText);
+
+    if (!cleanedText) {
+      throw new BadRequestException('PDF does not contain extractable text');
+    }
+
+    return this.generateSummary(cleanedText);
   }
 
   private async extractPdfText(pdfBuffer: Buffer) {
